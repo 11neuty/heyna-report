@@ -114,7 +114,7 @@ test('TC001_LoginSuccess', async ({ page }) => {
             'Step02_Input_Username',
             async () => {
                 await loginPage.inputUsername(
-                    'standard_use'
+                    'standard_user'
                 );
             }
         );

@@ -33,9 +33,16 @@ The framework is suitable for:
 
 ## Sample Report
 
-![HEYNA REPORT sample](assets/sample-report-placeholder.svg)
+>![HEYNA REPORT sample](assets/sample-report-placeholder.svg)
+> <img width="482" height="621" alt="image" src="https://github.com/user-attachments/assets/4d73f2f5-56be-4108-aa89-63dbf7136d9b"/>
+> <img width="730" height="432" alt="image" src="https://github.com/user-attachments/assets/d408e0ba-f0f4-4a3e-ac87-60096bc51577" />
+> <img width="692" height="647" alt="image" src="https://github.com/user-attachments/assets/856ea557-3e2c-41b4-980d-fd94d243c33f" />
+> <img width="688" height="257" alt="image" src="https://github.com/user-attachments/assets/6f85e1bd-7d67-4a45-9cc1-f8da638a2940" />
 
-> Replace this placeholder with a screenshot of `reports/HeynaReport.pdf` after running the test suite.
+
+
+
+
 
 ## Architecture
 

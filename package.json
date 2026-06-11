@@ -1,0 +1,33 @@
+{
+  "name": "project4",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+  "clean": "powershell Remove-Item reports,evidence,test-results,playwright-report,allure-results -Recurse -Force -ErrorAction SilentlyContinue",
+
+  "test": "playwright test",
+
+  "test:clean": "npm run clean && playwright test",
+
+  "test:headed": "playwright test --headed",
+
+  "test:ui": "playwright test --ui",
+
+  "test:debug": "playwright test --debug",
+
+  "report": "playwright show-report"
+},
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@types/node": "^25.9.3",
+    "allure-playwright": "^3.10.0"
+  },
+  "dependencies": {
+    "pdfkit": "^0.19.1"
+  }
+}

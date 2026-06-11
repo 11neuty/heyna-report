@@ -1,0 +1,19 @@
+<svg width="1200" height="675" viewBox="0 0 1200 675" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="675" fill="#F8FAFC"/>
+  <rect x="120" y="70" width="960" height="535" rx="12" fill="#FFFFFF" stroke="#D1D5DB" stroke-width="3"/>
+  <rect x="120" y="70" width="960" height="92" rx="12" fill="#123A63"/>
+  <text x="600" y="126" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" fill="#FFFFFF">HEYNA REPORT</text>
+  <text x="600" y="198" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#6B7280">From Execution to Evidence.</text>
+  <rect x="180" y="250" width="150" height="88" rx="8" fill="#2563EB"/>
+  <rect x="360" y="250" width="150" height="88" rx="8" fill="#16A05D"/>
+  <rect x="540" y="250" width="150" height="88" rx="8" fill="#D32F2F"/>
+  <rect x="720" y="250" width="150" height="88" rx="8" fill="#F59E0B"/>
+  <rect x="180" y="390" width="840" height="44" fill="#123A63"/>
+  <rect x="180" y="434" width="840" height="52" fill="#FFFFFF" stroke="#E5E7EB"/>
+  <rect x="180" y="486" width="840" height="52" fill="#F8FAFC" stroke="#E5E7EB"/>
+  <text x="255" y="304" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">Total Tests</text>
+  <text x="435" y="304" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">Passed</text>
+  <text x="615" y="304" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">Failed</text>
+  <text x="795" y="304" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">Skipped</text>
+  <text x="600" y="417" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">Sample Enterprise PDF Report Preview</text>
+</svg>

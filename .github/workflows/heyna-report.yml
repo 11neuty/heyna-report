@@ -1,0 +1,57 @@
+name: HEYNA REPORT
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  heyna-report:
+    name: Run Playwright and Generate HEYNA REPORT
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run tests
+        run: npm test
+
+      - name: Generate HEYNA REPORT
+        if: always()
+        run: node regenerate-report.js
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: heyna-report-reports
+          path: reports/
+          if-no-files-found: warn
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: heyna-report-evidence
+          path: evidence/
+          if-no-files-found: warn
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: heyna-report-test-results
+          path: test-results/
+          if-no-files-found: warn

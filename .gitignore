@@ -1,0 +1,12 @@
+node_modules/
+
+reports/
+evidence/
+test-results/
+playwright-report/
+allure-results/
+
+*.pdf
+*.log
+
+.DS_Store

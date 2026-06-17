@@ -5,6 +5,8 @@ module.exports = defineConfig({
 
   testDir: './tests',
 
+  globalTeardown: './heyna.global-teardown.js',
+
   fullyParallel: false,
 
   forbidOnly: !!process.env.CI,

@@ -1,5 +1,7 @@
 # Auto Action Capture
 
+Version: HEYNA REPORT v2.1.0
+
 Auto Action Capture allows QA engineers to write native Playwright code while HEYNA REPORT automatically records execution steps.
 
 ## Supported Actions
@@ -16,6 +18,36 @@ Auto Action Capture allows QA engineers to write native Playwright code while HE
 - `locator.selectOption()`
 - `page.press()`
 - `locator.press()`
+- `page.dragAndDrop()`
+- `page.setInputFiles()`
+- `page.hover()`
+- `locator.hover()`
+- `page.dblclick()`
+- `locator.dblclick()`
+- `page.tap()`
+- `locator.tap()`
+- `page.focus()`
+- `locator.focus()`
+- `locator.blur()`
+- `page.keyboard.press()`
+- `page.mouse.click()`
+
+Modern locator factories are supported:
+
+- `page.getByRole()`
+- `page.getByText()`
+- `page.getByLabel()`
+- `page.getByPlaceholder()`
+- `page.getByTestId()`
+- `page.getByAltText()`
+- `page.getByTitle()`
+
+Locator chaining is supported:
+
+- `.first()`
+- `.last()`
+- `.nth()`
+- `.filter()`
 
 ## Enable Auto Capture
 
@@ -65,9 +97,12 @@ module.exports = {
 
 ## Screenshot Modes
 
-- `disabled`: no screenshots for passed actions
+- `off`: no screenshots for passed actions
+- `disabled`: legacy alias for `off`
 - `failure-only`: screenshots only on failed actions
-- `on-step`: screenshots for every captured action
+- `all`: screenshots for every captured action
+- `on-step`: legacy alias for `all`
+- `important-actions`: screenshots for click, upload, drag, and similar high-value actions
 
 Failed actions always capture screenshots.
 
@@ -82,3 +117,20 @@ await Heyna.step(page, currentTC, 'Custom Business Step', async () => {
 ```
 
 Use manual mode for business-level steps that do not map cleanly to a single Playwright action.
+
+## Coverage Diagnostics
+
+HEYNA REPORT prints auto-capture coverage at the end of the run:
+
+```text
+Auto Capture Coverage
+Detected Actions: 26
+Captured: 26
+Missed: 0
+```
+
+Coverage details are stored in:
+
+```text
+test-results/metadata.json
+```

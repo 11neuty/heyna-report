@@ -19,7 +19,37 @@ const DEFAULT_CONFIG = {
         'check',
         'uncheck',
         'selectOption',
-        'press'
+        'press',
+        'dragAndDrop',
+        'setInputFiles',
+        'hover',
+        'dblclick',
+        'tap',
+        'focus',
+        'blur'
+    ],
+    locatorFactories: [
+        'locator',
+        'getByRole',
+        'getByText',
+        'getByLabel',
+        'getByPlaceholder',
+        'getByTestId',
+        'getByAltText',
+        'getByTitle'
+    ],
+    chainMethods: [
+        'first',
+        'last',
+        'nth',
+        'filter'
+    ],
+    importantActions: [
+        'click',
+        'dblclick',
+        'tap',
+        'setInputFiles',
+        'dragAndDrop'
     ],
     apiLogging: {
         include: ['/api/', 'saucedemo.com']
@@ -56,6 +86,10 @@ function writeJson(file, data) {
     fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
+function sleep(ms) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
 function withWriteLock(callback) {
     ensureDir(RESULT_DIR);
 
@@ -66,9 +100,18 @@ function withWriteLock(callback) {
         try {
             lockHandle = fs.openSync(WRITE_LOCK_FILE, 'wx');
         } catch (error) {
+            try {
+                const age = Date.now() - fs.statSync(WRITE_LOCK_FILE).mtimeMs;
+                if (age > 10000) fs.rmSync(WRITE_LOCK_FILE, { force: true });
+            } catch (statError) {
+                // Continue retry loop if the lock disappears between checks.
+            }
+
             if (Date.now() > timeoutAt) {
                 throw new Error('HEYNA write lock timeout.');
             }
+
+            sleep(25);
         }
     }
 
@@ -85,6 +128,15 @@ function mutateExecution(mutator) {
         const data = readJson(EXECUTION_FILE, []);
         const result = mutator(data) || data;
         writeJson(EXECUTION_FILE, result);
+        return result;
+    });
+}
+
+function mutateMetadata(mutator) {
+    return withWriteLock(() => {
+        const metadata = readJson(METADATA_FILE, {});
+        const result = mutator(metadata) || metadata;
+        writeJson(METADATA_FILE, result);
         return result;
     });
 }
@@ -133,14 +185,17 @@ function loadConfig() {
         userConfig = require(CONFIG_FILE);
     }
 
-    return {
-        ...DEFAULT_CONFIG,
-        ...userConfig,
-        apiLogging: {
-            ...DEFAULT_CONFIG.apiLogging,
-            ...(userConfig.apiLogging || {})
-        },
-        autoActions: userConfig.autoActions || DEFAULT_CONFIG.autoActions
+        return {
+            ...DEFAULT_CONFIG,
+            ...userConfig,
+            apiLogging: {
+                ...DEFAULT_CONFIG.apiLogging,
+                ...(userConfig.apiLogging || {})
+            },
+        autoActions: userConfig.autoActions || DEFAULT_CONFIG.autoActions,
+        locatorFactories: userConfig.locatorFactories || DEFAULT_CONFIG.locatorFactories,
+        chainMethods: userConfig.chainMethods || DEFAULT_CONFIG.chainMethods,
+        importantActions: userConfig.importantActions || DEFAULT_CONFIG.importantActions
     };
 }
 
@@ -212,7 +267,10 @@ class HeynaReporter {
                 ...this.config.apiLogging,
                 ...(config.apiLogging || {})
             },
-            autoActions: config.autoActions || this.config.autoActions
+            autoActions: config.autoActions || this.config.autoActions,
+            locatorFactories: config.locatorFactories || this.config.locatorFactories,
+            chainMethods: config.chainMethods || this.config.chainMethods,
+            importantActions: config.importantActions || this.config.importantActions
         };
 
         if (config.project) process.env.HEYNA_PROJECT = config.project;
@@ -230,30 +288,40 @@ class HeynaReporter {
     static initializeRun(metadata = {}) {
         ensureDir(RESULT_DIR);
 
-        const hasActiveRun = fs.existsSync(RUN_LOCK_FILE);
-        const shouldReset = metadata.reset === true
-            || !hasActiveRun
-            || !fs.existsSync(EXECUTION_FILE);
+        const runState = withWriteLock(() => {
+            const hasActiveRun = fs.existsSync(RUN_LOCK_FILE);
+            const shouldReset = metadata.reset === true
+                || !hasActiveRun
+                || !fs.existsSync(EXECUTION_FILE);
 
-        if (shouldReset) {
-            writeJson(EXECUTION_FILE, []);
-            fs.writeFileSync(RUN_LOCK_FILE, new Date().toISOString());
-        }
+            if (shouldReset) {
+                writeJson(EXECUTION_FILE, []);
+                fs.writeFileSync(RUN_LOCK_FILE, new Date().toISOString());
+            }
 
-        this.updateMetadata({
+            return { shouldReset };
+        });
+
+        const metadataUpdates = {
             project: metadata.project || process.env.HEYNA_PROJECT || 'SauceDemo',
             feature: metadata.feature || process.env.HEYNA_FEATURE || 'Login & Authentication',
             environment: metadata.environment || process.env.ENVIRONMENT || 'QA',
             browser: metadata.browser || process.env.BROWSER || 'chromium',
             automationTool: 'Playwright',
             executedBy: metadata.executedBy || process.env.HEYNA_EXECUTED_BY || process.env.USERNAME || 'Automation Framework',
-            executionStartTime: shouldReset
+            executionStartTime: runState.shouldReset
                 ? new Date().toISOString()
                 : this.getMetadata().executionStartTime || new Date().toISOString(),
             runStatus: 'IN_PROGRESS',
             autoCapture: this.config.autoCapture,
             screenshotMode: this.config.screenshotMode
-        });
+        };
+
+        if (runState.shouldReset) {
+            metadataUpdates.autoCaptureCoverage = this.createEmptyCoverage();
+        }
+
+        this.updateMetadata(metadataUpdates);
     }
 
     static initializeTest(testCase, metadata = {}) {
@@ -262,12 +330,27 @@ class HeynaReporter {
 
         mutateExecution(data => {
             const existing = data.find(tc => tc.testCase === testCase);
+            const retry = Number(metadata.retry || 0);
+            const repeatEachIndex = Number(metadata.repeatEachIndex || 0);
+            const attempt = {
+                attemptNumber: retry + 1,
+                retry,
+                repeatEachIndex,
+                status: 'RUNNING',
+                duration: 0,
+                steps: [],
+                startedAt: new Date().toISOString()
+            };
 
             if (existing) {
                 existing.status = 'RUNNING';
                 existing.duration = 0;
                 existing.feature = metadata.feature || existing.feature || process.env.HEYNA_FEATURE || 'Login & Authentication';
                 existing.steps = [];
+                existing.attempts = Array.isArray(existing.attempts) ? existing.attempts : [];
+                existing.attempts.push(attempt);
+                existing.currentAttempt = attempt.attemptNumber;
+                existing.retryCount = retry;
                 existing.executionDate = new Date().toISOString();
                 delete existing.errorMessage;
                 delete existing.failureScreenshot;
@@ -278,6 +361,9 @@ class HeynaReporter {
                     duration: 0,
                     feature: metadata.feature || process.env.HEYNA_FEATURE || 'Login & Authentication',
                     steps: [],
+                    attempts: [attempt],
+                    currentAttempt: attempt.attemptNumber,
+                    retryCount: retry,
                     executionDate: new Date().toISOString()
                 });
             }
@@ -288,7 +374,10 @@ class HeynaReporter {
         const config = {
             ...this.config,
             ...options,
-            autoActions: options.autoActions || this.config.autoActions
+            autoActions: options.autoActions || this.config.autoActions,
+            locatorFactories: options.locatorFactories || this.config.locatorFactories,
+            chainMethods: options.chainMethods || this.config.chainMethods,
+            importantActions: options.importantActions || this.config.importantActions
         };
 
         if (!config.autoCapture || this.attachedPages.has(page)) return page;
@@ -298,7 +387,8 @@ class HeynaReporter {
         page.__heynaConfig = config;
 
         this.patchPageActionMethods(page, testCase, config);
-        this.patchLocatorFactory(page, testCase, config);
+        this.patchLocatorFactories(page, testCase, config);
+        this.patchInputDevices(page, testCase, config);
 
         return page;
     }
@@ -309,7 +399,7 @@ class HeynaReporter {
 
             const original = page[action].bind(page);
             const wrapped = async (...args) => {
-                const target = args[0];
+                const target = this.createPageActionTarget(action, args);
                 const name = this.createStepName(action, target);
 
                 return this.captureAutoAction({
@@ -328,18 +418,60 @@ class HeynaReporter {
         });
     }
 
-    static patchLocatorFactory(page, testCase, config) {
-        if (typeof page.locator !== 'function' || page.locator.__heynaPatched) return;
+    static patchLocatorFactories(page, testCase, config) {
+        config.locatorFactories.forEach(factoryName => {
+            if (typeof page[factoryName] !== 'function' || page[factoryName].__heynaPatched) return;
 
-        const originalLocator = page.locator.bind(page);
-        const wrappedLocator = (...args) => {
-            const locator = originalLocator(...args);
-            const target = args[0];
-            return this.wrapLocator(locator, page, testCase, target, config);
-        };
+            const originalFactory = page[factoryName].bind(page);
+            const wrappedFactory = (...args) => {
+                const locator = originalFactory(...args);
+                const target = this.createTargetDescriptor(factoryName, args);
+                return this.wrapLocator(locator, page, testCase, target, config);
+            };
 
-        wrappedLocator.__heynaPatched = true;
-        page.locator = wrappedLocator;
+            wrappedFactory.__heynaPatched = true;
+            page[factoryName] = wrappedFactory;
+        });
+    }
+
+    static patchInputDevices(page, testCase, config) {
+        if (page.keyboard && typeof page.keyboard.press === 'function' && !page.keyboard.press.__heynaPatched) {
+            const originalKeyboardPress = page.keyboard.press.bind(page.keyboard);
+            const wrappedKeyboardPress = async (...args) => {
+                const target = { type: 'keyboard', value: args[0] };
+                return this.captureAutoAction({
+                    page,
+                    testCase,
+                    action: 'press',
+                    target,
+                    stepName: this.createStepName('press', target),
+                    execute: () => originalKeyboardPress(...args),
+                    config
+                });
+            };
+
+            wrappedKeyboardPress.__heynaPatched = true;
+            page.keyboard.press = wrappedKeyboardPress;
+        }
+
+        if (page.mouse && typeof page.mouse.click === 'function' && !page.mouse.click.__heynaPatched) {
+            const originalMouseClick = page.mouse.click.bind(page.mouse);
+            const wrappedMouseClick = async (...args) => {
+                const target = { type: 'mouse', value: `${args[0]}, ${args[1]}` };
+                return this.captureAutoAction({
+                    page,
+                    testCase,
+                    action: 'click',
+                    target,
+                    stepName: this.createStepName('click', target),
+                    execute: () => originalMouseClick(...args),
+                    config
+                });
+            };
+
+            wrappedMouseClick.__heynaPatched = true;
+            page.mouse.click = wrappedMouseClick;
+        }
     }
 
     static wrapLocator(locator, page, testCase, target, config) {
@@ -347,7 +479,18 @@ class HeynaReporter {
 
         return new Proxy(locator, {
             get: (object, property) => {
+                if (property === '__heynaProxy') return true;
+                if (property === '__heynaTarget') return target;
+
                 const value = object[property];
+
+                if (config.chainMethods.includes(property) && typeof value === 'function') {
+                    return (...args) => {
+                        const chainedLocator = value.apply(object, args);
+                        const chainedTarget = this.extendTargetDescriptor(target, property, args);
+                        return this.wrapLocator(chainedLocator, page, testCase, chainedTarget, config);
+                    };
+                }
 
                 if (!config.autoActions.includes(property) || typeof value !== 'function') {
                     return typeof value === 'function' ? value.bind(object) : value;
@@ -373,15 +516,17 @@ class HeynaReporter {
     static async captureAutoAction({ page, testCase, action, target, stepName, execute, config }) {
         const startedAt = Date.now();
         const timestamp = new Date().toISOString();
+        this.recordAutoCapture('detected', action);
 
         try {
             const result = await execute();
-            const screenshot = await this.captureScreenshotByMode(page, testCase, stepName, config.screenshotMode, false);
+            const screenshot = await this.captureScreenshotByMode(page, testCase, stepName, config.screenshotMode, false, action);
+            this.recordAutoCapture('captured', action);
 
             this.addStep(testCase, {
                 name: stepName,
                 action,
-                target: String(target || ''),
+                target: this.targetToString(target),
                 status: 'PASS',
                 duration: Date.now() - startedAt,
                 timestamp,
@@ -392,11 +537,12 @@ class HeynaReporter {
             return result;
         } catch (error) {
             const screenshot = await this.captureEvidence(page, testCase, stepName, 'FAILED');
+            this.recordAutoCapture('captured', action);
 
             this.addStep(testCase, {
                 name: stepName,
                 action,
-                target: String(target || ''),
+                target: this.targetToString(target),
                 status: 'FAIL',
                 duration: Date.now() - startedAt,
                 timestamp,
@@ -415,7 +561,7 @@ class HeynaReporter {
 
         try {
             const result = await action();
-            const screenshot = await this.captureScreenshotByMode(page, testCase, stepName, this.config.screenshotMode, false);
+            const screenshot = await this.captureScreenshotByMode(page, testCase, stepName, this.config.screenshotMode, false, 'manual');
             this.addStep(testCase, { name: stepName, status: 'PASS', duration: Date.now() - startedAt, timestamp, mode: 'MANUAL', screenshot });
             return result;
         } catch (error) {
@@ -425,14 +571,18 @@ class HeynaReporter {
         }
     }
 
-    static async captureScreenshotByMode(page, testCase, stepName, screenshotMode, isFailure) {
+    static async captureScreenshotByMode(page, testCase, stepName, screenshotMode, isFailure, action) {
         const mode = screenshotMode || 'failure-only';
 
         if (isFailure) {
             return this.captureEvidence(page, testCase, stepName, 'FAILED');
         }
 
-        if (mode === 'on-step') {
+        if (mode === 'all' || mode === 'on-step') {
+            return this.captureEvidence(page, testCase, stepName);
+        }
+
+        if (mode === 'important-actions' && this.config.importantActions.includes(action)) {
             return this.captureEvidence(page, testCase, stepName);
         }
 
@@ -449,6 +599,12 @@ class HeynaReporter {
 
             if (!normalized.screenshot) delete normalized.screenshot;
             tc.steps.push(normalized);
+
+            if (Array.isArray(tc.attempts) && tc.attempts.length) {
+                const attempt = tc.attempts[tc.attempts.length - 1];
+                attempt.steps = Array.isArray(attempt.steps) ? attempt.steps : [];
+                attempt.steps.push(normalized);
+            }
         });
     }
 
@@ -460,6 +616,17 @@ class HeynaReporter {
             tc.duration = duration || 0;
             if (errorMessage) tc.errorMessage = cleanMessage(errorMessage);
             if (extra.failureScreenshot) tc.failureScreenshot = extra.failureScreenshot;
+
+            tc.finalResult = tc.status;
+
+            if (Array.isArray(tc.attempts) && tc.attempts.length) {
+                const attempt = tc.attempts[tc.attempts.length - 1];
+                attempt.status = tc.status;
+                attempt.duration = duration || 0;
+                attempt.finishedAt = new Date().toISOString();
+                if (errorMessage) attempt.errorMessage = cleanMessage(errorMessage);
+                if (extra.failureScreenshot) attempt.failureScreenshot = extra.failureScreenshot;
+            }
         });
 
         console.log(`[HEYNA]\n${testCase} => ${normalizeStatus(status)}`);
@@ -470,7 +637,14 @@ class HeynaReporter {
             data.forEach(tc => {
                 if (normalizeStatus(tc.status) === 'RUNNING') {
                     tc.status = 'FAILED';
+                    tc.finalResult = 'FAILED';
                     tc.errorMessage = tc.errorMessage || message;
+                    if (Array.isArray(tc.attempts) && tc.attempts.length) {
+                        const attempt = tc.attempts[tc.attempts.length - 1];
+                        attempt.status = 'FAILED';
+                        attempt.errorMessage = attempt.errorMessage || message;
+                        attempt.finishedAt = attempt.finishedAt || new Date().toISOString();
+                    }
                     console.log(`[HEYNA]\n${tc.testCase} => FAILED`);
                 }
             });
@@ -493,17 +667,18 @@ class HeynaReporter {
     }
 
     static updateMetadata(updates = {}) {
-        const current = readJson(METADATA_FILE, {});
-        writeJson(METADATA_FILE, {
-            project: process.env.HEYNA_PROJECT || 'SauceDemo',
-            feature: process.env.HEYNA_FEATURE || 'Login & Authentication',
-            environment: process.env.ENVIRONMENT || 'QA',
-            browser: process.env.BROWSER || 'chromium',
-            automationTool: 'Playwright',
-            executedBy: process.env.HEYNA_EXECUTED_BY || process.env.USERNAME || 'Automation Framework',
-            executionStartTime: new Date().toISOString(),
-            ...current,
-            ...updates
+        mutateMetadata(current => {
+            return {
+                project: process.env.HEYNA_PROJECT || 'SauceDemo',
+                feature: process.env.HEYNA_FEATURE || 'Login & Authentication',
+                environment: process.env.ENVIRONMENT || 'QA',
+                browser: process.env.BROWSER || 'chromium',
+                automationTool: 'Playwright',
+                executedBy: process.env.HEYNA_EXECUTED_BY || process.env.USERNAME || 'Automation Framework',
+                executionStartTime: new Date().toISOString(),
+                ...current,
+                ...updates
+            };
         });
     }
 
@@ -560,7 +735,82 @@ class HeynaReporter {
         };
     }
 
+    static createPageActionTarget(action, args) {
+        if (action === 'dragAndDrop') {
+            return {
+                type: 'dragAndDrop',
+                source: args[0],
+                target: args[1]
+            };
+        }
+
+        if (action === 'setInputFiles') {
+            return {
+                type: 'upload',
+                value: args[0],
+                files: args[1]
+            };
+        }
+
+        return {
+            type: 'selector',
+            value: args[0]
+        };
+    }
+
+    static createTargetDescriptor(factoryName, args) {
+        const value = args[0];
+        const options = args[1] || {};
+
+        if (factoryName === 'getByRole') {
+            return {
+                type: 'role',
+                role: value,
+                name: options.name
+            };
+        }
+
+        if (factoryName === 'getByText') return { type: 'text', value };
+        if (factoryName === 'getByLabel') return { type: 'label', value };
+        if (factoryName === 'getByPlaceholder') return { type: 'placeholder', value };
+        if (factoryName === 'getByTestId') return { type: 'testId', value };
+        if (factoryName === 'getByAltText') return { type: 'altText', value };
+        if (factoryName === 'getByTitle') return { type: 'title', value };
+
+        return {
+            type: 'selector',
+            value
+        };
+    }
+
+    static extendTargetDescriptor(target, chainMethod, args) {
+        const next = typeof target === 'object' && target !== null
+            ? { ...target }
+            : { type: 'selector', value: target };
+
+        next.chain = Array.isArray(next.chain) ? [...next.chain] : [];
+        next.chain.push({
+            method: chainMethod,
+            value: args[0]
+        });
+
+        return next;
+    }
+
     static createStepName(action, target) {
+        if (action === 'dragAndDrop') {
+            return `Drag ${this.readableTarget(target.source) || 'Element'} To ${this.readableTarget(target.target) || 'Element'}`;
+        }
+
+        if (action === 'setInputFiles') {
+            return `Upload ${this.readableTarget(target.value) || 'File'}`;
+        }
+
+        if (action === 'dblclick') {
+            const targetName = this.readableTarget(target);
+            return targetName ? `Double Click ${targetName}` : 'Double Click Element';
+        }
+
         const targetName = this.readableTarget(target);
         const actionName = titleCase(action);
 
@@ -572,16 +822,34 @@ class HeynaReporter {
     }
 
     static readableTarget(target) {
+        if (typeof target === 'object' && target !== null) {
+            if (target.type === 'keyboard') return titleCase(target.value);
+            if (target.type === 'mouse') return `Mouse ${target.value}`;
+            if (target.type === 'role') return titleCase(target.name || target.role);
+            if (target.type === 'label') return titleCase(target.value);
+            if (target.type === 'placeholder') return titleCase(target.value);
+            if (target.type === 'text') return titleCase(target.value);
+            if (target.type === 'testId') return titleCase(target.value);
+            if (target.type === 'altText') return titleCase(target.value);
+            if (target.type === 'title') return titleCase(target.value);
+            if (target.type === 'upload') return this.readableTarget(target.value);
+            if (target.type === 'selector') return this.readableTarget(target.value);
+        }
+
         const selector = String(target || '').trim();
         if (!selector) return '';
 
         const patterns = [
+            /\[aria-label=["']?([^"'\]]+)["']?\]/,
+            /label=["']?([^"']+)["']?/,
+            /\[placeholder=["']?([^"'\]]+)["']?\]/,
+            /getByRole\([^,]+,\s*\{\s*name:\s*["']([^"']+)["']/,
+            /\[data-testid=["']?([^"'\]]+)["']?\]/,
+            /\[data-test=["']?([^"'\]]+)["']?\]/,
             /#([\w-]+)/,
             /\[name=["']?([^"'\]]+)["']?\]/,
-            /\[aria-label=["']?([^"'\]]+)["']?\]/,
-            /\[placeholder=["']?([^"'\]]+)["']?\]/,
             /text=["']?([^"']+)["']?/,
-            /label=["']?([^"']+)["']?/
+            /\.([\w-]+)/
         ];
 
         for (const pattern of patterns) {
@@ -592,6 +860,79 @@ class HeynaReporter {
         if (/^[a-z]+$/i.test(selector)) return titleCase(selector);
 
         return '';
+    }
+
+    static targetToString(target) {
+        if (typeof target !== 'object' || target === null) return String(target || '');
+
+        if (target.type === 'dragAndDrop') {
+            return `${this.targetToString(target.source)} -> ${this.targetToString(target.target)}`;
+        }
+
+        if (target.type === 'role') {
+            return `role=${target.role}${target.name ? ` name=${target.name}` : ''}${this.chainToString(target)}`;
+        }
+
+        const value = target.value == null ? '' : String(target.value);
+        return `${target.type || 'target'}=${value}${this.chainToString(target)}`;
+    }
+
+    static chainToString(target) {
+        if (!target || !Array.isArray(target.chain) || !target.chain.length) return '';
+
+        return target.chain
+            .map(item => item.value === undefined ? `.${item.method}()` : `.${item.method}(${item.value})`)
+            .join('');
+    }
+
+    static createEmptyCoverage() {
+        return {
+            detected: 0,
+            captured: 0,
+            missed: 0,
+            byAction: {}
+        };
+    }
+
+    static recordAutoCapture(type, action) {
+        mutateMetadata(metadata => {
+            metadata.autoCaptureCoverage = metadata.autoCaptureCoverage || this.createEmptyCoverage();
+            metadata.autoCaptureCoverage[type] = (metadata.autoCaptureCoverage[type] || 0) + 1;
+            metadata.autoCaptureCoverage.missed = Math.max(
+                0,
+                (metadata.autoCaptureCoverage.detected || 0) - (metadata.autoCaptureCoverage.captured || 0)
+            );
+            metadata.autoCaptureCoverage.byAction = metadata.autoCaptureCoverage.byAction || {};
+            metadata.autoCaptureCoverage.byAction[action] = metadata.autoCaptureCoverage.byAction[action] || {
+                detected: 0,
+                captured: 0
+            };
+            metadata.autoCaptureCoverage.byAction[action][type] =
+                (metadata.autoCaptureCoverage.byAction[action][type] || 0) + 1;
+        });
+    }
+
+    static getAutoCaptureCoverage() {
+        const metadata = this.getMetadata();
+        const coverage = metadata.autoCaptureCoverage || this.createEmptyCoverage();
+
+        return {
+            detected: coverage.detected || 0,
+            captured: coverage.captured || 0,
+            missed: Math.max(0, (coverage.detected || 0) - (coverage.captured || 0)),
+            byAction: coverage.byAction || {}
+        };
+    }
+
+    static printAutoCaptureCoverage() {
+        const coverage = this.getAutoCaptureCoverage();
+
+        console.log([
+            'Auto Capture Coverage',
+            `Detected Actions: ${coverage.detected}`,
+            `Captured: ${coverage.captured}`,
+            `Missed: ${coverage.missed}`
+        ].join('\n'));
     }
 
     static isStaticResource(url = '') {

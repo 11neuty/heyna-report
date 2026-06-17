@@ -1,7 +1,6 @@
 const { test } = require('@playwright/test');
 const { LoginPage } = require('../pages/LoginPage');
 const Heyna = require('../utils/HeynaReporter');
-const { HeynaPdfGenerator } = require('../utils/HeynaPdfGenerator');
 
 let currentTC;
 let currentLogger;
@@ -40,7 +39,11 @@ test.beforeEach(
 
         Heyna
             .initializeTest(
-                currentTC
+                currentTC,
+                {
+                    retry: testInfo.retry,
+                    repeatEachIndex: testInfo.repeatEachIndex
+                }
             );
 
         Heyna.attach(
@@ -182,13 +185,3 @@ test('TC002_LoginFailed', async ({ page }) => {
 
 });
 
-test.afterAll(
-    async () => {
-
-        Heyna.markRunningTestsAsFailed();
-
-        await HeynaPdfGenerator
-            .generate();
-
-    }
-);

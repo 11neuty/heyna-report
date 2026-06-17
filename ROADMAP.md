@@ -20,11 +20,19 @@ Current features:
 
 ## v2.0
 
-Planned features:
+Current v2.x features:
+
+- Auto Action Capture
+- Modern Playwright locator support
+- Locator chaining support
+- Retry-aware execution data
+- Auto Capture Coverage diagnostics
+
+Planned v2.x improvements:
 
 - Pie Chart for test status summary
 - Execution Trend summary
-- Enhanced Footer customization
+- Enhanced footer customization
 - Config file for branding and metadata
 - Better failed test grouping
 

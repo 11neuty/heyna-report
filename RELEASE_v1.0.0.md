@@ -1,77 +1,422 @@
-# HEYNA REPORT v1.0.0
+I am developing an open-source Playwright reporting framework called:
 
-**From Execution to Evidence.**
+HEYNA REPORT
 
-HEYNA REPORT v1.0.0 introduces an enterprise-style Playwright reporting framework that converts automated test execution into structured PDF evidence.
+Tagline:
 
-## Highlights
+From Execution to Evidence.
 
-- Branded PDF report generated with PDFKit
-- Screenshot evidence captured per test step
-- API activity logging per test case
-- Execution summary and test case summary
-- Failed test analysis with error message and screenshot
-- Reusable CommonJS utility architecture
-- GitHub Actions workflow for CI artifacts
+The current Auto Action Capture implementation is working but not yet production-grade.
 
-## New Features
+Current status:
 
-- `Heyna.step()` wrapper for step execution and screenshot capture
-- `Heyna.createApiLogger()` for API tracking
-- `Heyna.initializeRun()` for metadata setup
-- `Heyna.initializeTest()` for test lifecycle tracking
-- `Heyna.completeTest()` for final status persistence
-- `Heyna.markRunningTestsAsFailed()` safety mechanism
-- `HeynaPdfGenerator.generate()` for custom PDF generation
-- Logo support through `assets/heyna-logo.png`
-- Footer with `Page X of Y`
-- PDF sections:
-  - Cover Page
-  - Execution Summary
-  - Test Case Summary
-  - Failed Test Analysis
-  - Step Summary
-  - Evidence Section
-  - API Activity
+✓ page.fill()
+✓ page.click()
+✓ page.check()
+✓ page.uncheck()
+✓ page.selectOption()
+✓ page.press()
 
-## Architecture
+✓ locator.fill()
+✓ locator.click()
+✓ locator.check()
+✓ locator.uncheck()
+✓ locator.selectOption()
+✓ locator.press()
 
-```text
-utils/
-├── HeynaReporter.js
-└── HeynaPdfGenerator.js
+However several important Playwright patterns are still not fully supported.
+
+==================================================
+OBJECTIVE
+=========
+
+Upgrade Auto Action Capture from:
+
+v2.0.0-beta
+
+to
+
+v2.1.0
+
+Production Ready Auto Capture Engine
+
+==================================================
+ISSUE 1
+=======
+
+Support Modern Playwright Locator APIs
+
+Current implementation focuses on:
+
+page.locator(...)
+
+but modern Playwright commonly uses:
+
+page.getByRole()
+page.getByText()
+page.getByLabel()
+page.getByPlaceholder()
+page.getByTestId()
+
+Examples:
+
+```javascript
+await page
+    .getByRole(
+        'button',
+        { name: 'Login' }
+    )
+    .click();
+
+await page
+    .getByLabel(
+        'Username'
+    )
+    .fill(
+        'admin'
+    );
+
+await page
+    .getByPlaceholder(
+        'Search'
+    )
+    .fill(
+        'Playwright'
+    );
 ```
 
-`HeynaReporter.js` handles runtime tracking, step evidence, API logs, and JSON result data.
+These actions must be automatically captured.
 
-`HeynaPdfGenerator.js` handles the enterprise PDF layout and report rendering.
+==================================================
+ISSUE 2
+=======
 
-## Known Limitations
+Support Locator Chaining
 
-- PDF report is file-based and generated locally.
-- Charts are not yet included.
-- HTML dashboard is not yet available.
-- Multi-project aggregation is not yet supported.
-- Video and trace evidence are not yet embedded.
+Examples:
 
-## Roadmap Preview
+```javascript
+await page
+    .getByRole(
+        'button'
+    )
+    .first()
+    .click();
 
-Next planned improvements:
+await page
+    .locator('.menu')
+    .nth(2)
+    .click();
 
-- Pie chart summary
-- Execution trend summary
-- Video evidence
-- HAR capture
-- Trace viewer links
-- HTML dashboard
-- Theme support
-- NPM package distribution
+await page
+    .locator('.card')
+    .last()
+    .click();
+```
 
-## Upgrade Notes
+Auto capture must still work.
 
-This is the first public release. No migration is required.
+==================================================
+ISSUE 3
+=======
 
-## Author
+Improve Human Readable Names
 
-Ryan Daffa Pratama  
-Software Quality Engineer
+Current output sometimes falls back to:
+
+Click Element
+Fill Element
+
+Target:
+
+```javascript
+await page
+    .getByLabel(
+        'Username'
+    )
+    .fill(
+        'admin'
+    );
+```
+
+↓
+
+```text
+Fill Username
+```
+
+---
+
+```javascript
+await page
+    .getByRole(
+        'button',
+        { name: 'Login' }
+    )
+    .click();
+```
+
+↓
+
+```text
+Click Login
+```
+
+---
+
+```javascript
+await page
+    .getByPlaceholder(
+        'Search'
+    )
+    .fill(
+        'test'
+    );
+```
+
+↓
+
+```text
+Fill Search
+```
+
+Priority order:
+
+1. aria-label
+2. label text
+3. placeholder
+4. role + accessible name
+5. test id
+6. id
+7. name
+8. fallback
+
+Implement smart selector normalization.
+
+==================================================
+ISSUE 4
+=======
+
+Support Additional User Actions
+
+Add support for:
+
+```javascript
+page.dragAndDrop()
+
+page.setInputFiles()
+
+page.hover()
+
+page.dblclick()
+
+page.tap()
+
+page.focus()
+
+page.blur()
+
+page.keyboard.press()
+
+page.mouse.click()
+```
+
+Generated examples:
+
+```text
+Drag Product To Cart
+Upload Profile Picture
+Hover Product Card
+Double Click Submit
+Press Enter
+```
+
+==================================================
+ISSUE 5
+=======
+
+Reduce Monkey Patch Risk
+
+Review current patch strategy.
+
+Current implementation patches:
+
+page
+locator
+
+Review:
+
+* maintainability
+* Playwright version compatibility
+* memory usage
+* performance impact
+
+Recommend safer architecture if necessary.
+
+==================================================
+ISSUE 6
+=======
+
+Parallel Execution Validation
+
+Validate:
+
+workers > 1
+
+Ensure:
+
+execution.json
+
+does not suffer from:
+
+* race condition
+* overwritten data
+* duplicated steps
+
+Review current lock implementation.
+
+Improve if necessary.
+
+==================================================
+ISSUE 7
+=======
+
+Retry Awareness
+
+Playwright retries must be visible.
+
+Example:
+
+```text
+TC001
+
+Attempt 1
+FAILED
+
+Attempt 2
+PASSED
+```
+
+Store:
+
+* attempt number
+* retry count
+* final result
+
+Expose this in report data.
+
+==================================================
+ISSUE 8
+=======
+
+Screenshot Intelligence
+
+Current:
+
+failure-only
+
+Enhance:
+
+```javascript
+screenshotMode:
+'off'
+
+screenshotMode:
+'failure-only'
+
+screenshotMode:
+'all'
+
+screenshotMode:
+'important-actions'
+```
+
+Important actions:
+
+* click
+* submit
+* upload
+* dragAndDrop
+
+==================================================
+ISSUE 9
+=======
+
+Auto Capture Coverage Report
+
+Add diagnostic output.
+
+Example:
+
+```text
+Auto Capture Coverage
+
+Detected Actions:
+120
+
+Captured:
+118
+
+Missed:
+2
+```
+
+This helps validate framework quality.
+
+==================================================
+TESTING REQUIREMENTS
+====================
+
+Create automated tests proving support for:
+
+✓ page.fill()
+
+✓ locator.fill()
+
+✓ getByRole()
+
+✓ getByText()
+
+✓ getByLabel()
+
+✓ getByPlaceholder()
+
+✓ getByTestId()
+
+✓ first()
+
+✓ last()
+
+✓ nth()
+
+✓ dragAndDrop()
+
+✓ upload()
+
+✓ hover()
+
+✓ dblclick()
+
+✓ keyboard.press()
+
+✓ mouse.click()
+
+==================================================
+OUTPUT REQUIRED
+===============
+
+Provide:
+
+1. Architecture Review
+2. Identified Weaknesses
+3. Recommended Design
+4. File Changes
+5. Full Source Code
+6. Migration Guide
+7. Performance Analysis
+8. Test Strategy
+9. Backward Compatibility Validation
+
+Goal:
+
+Make HEYNA REPORT Auto Action Capture production-ready and capable of capturing modern Playwright usage patterns without requiring reporting code from QA engineers.

@@ -7,6 +7,24 @@ const RESULT_DIR = path.join(ROOT, 'test-results');
 const EXECUTION_FILE = path.join(RESULT_DIR, 'execution.json');
 const METADATA_FILE = path.join(RESULT_DIR, 'metadata.json');
 const RUN_LOCK_FILE = path.join(RESULT_DIR, '.heyna-run.lock');
+const WRITE_LOCK_FILE = path.join(RESULT_DIR, '.heyna-write.lock');
+const CONFIG_FILE = path.join(ROOT, 'heyna.config.js');
+
+const DEFAULT_CONFIG = {
+    autoCapture: true,
+    screenshotMode: 'failure-only',
+    autoActions: [
+        'fill',
+        'click',
+        'check',
+        'uncheck',
+        'selectOption',
+        'press'
+    ],
+    apiLogging: {
+        include: ['/api/', 'saucedemo.com']
+    }
+};
 
 const defaultStepDescriptions = {
     Step01_Open_Login_Page: { stepName: 'Open Login Page', action: 'Navigate to SauceDemo login page.', expectedResult: 'Login page is displayed with username and password fields.' },
@@ -38,16 +56,55 @@ function writeJson(file, data) {
     fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
+function withWriteLock(callback) {
+    ensureDir(RESULT_DIR);
+
+    const timeoutAt = Date.now() + 5000;
+    let lockHandle;
+
+    while (!lockHandle) {
+        try {
+            lockHandle = fs.openSync(WRITE_LOCK_FILE, 'wx');
+        } catch (error) {
+            if (Date.now() > timeoutAt) {
+                throw new Error('HEYNA write lock timeout.');
+            }
+        }
+    }
+
+    try {
+        return callback();
+    } finally {
+        fs.closeSync(lockHandle);
+        fs.rmSync(WRITE_LOCK_FILE, { force: true });
+    }
+}
+
+function mutateExecution(mutator) {
+    return withWriteLock(() => {
+        const data = readJson(EXECUTION_FILE, []);
+        const result = mutator(data) || data;
+        writeJson(EXECUTION_FILE, result);
+        return result;
+    });
+}
+
 function normalizeStatus(status) {
     const value = String(status || '').toUpperCase();
     if (value === 'PASS') return 'PASSED';
-    if (value === 'FAIL' || value === 'TIMEDOUT' || value === 'INTERRUPTED') return 'FAILED';
-    if (value === 'SKIP') return 'SKIPPED';
+    if (value === 'FAIL' || value === 'FAILED' || value === 'TIMEDOUT' || value === 'INTERRUPTED') return 'FAILED';
+    if (value === 'SKIP' || value === 'SKIPPED') return 'SKIPPED';
+    if (value === 'PASSED') return 'PASSED';
+    if (value === 'RUNNING') return 'RUNNING';
     return value || 'UNKNOWN';
 }
 
+function stepStatus(status) {
+    return normalizeStatus(status) === 'FAILED' ? 'FAIL' : 'PASS';
+}
+
 function safeName(value) {
-    return String(value).replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '');
+    return String(value || 'Step').replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '');
 }
 
 function cleanMessage(message) {
@@ -59,12 +116,61 @@ function cleanMessage(message) {
         .trim();
 }
 
+function titleCase(value) {
+    return String(value || '')
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .replace(/[_-]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/\w\S*/g, word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
+}
+
+function loadConfig() {
+    let userConfig = {};
+
+    if (fs.existsSync(CONFIG_FILE)) {
+        delete require.cache[require.resolve(CONFIG_FILE)];
+        userConfig = require(CONFIG_FILE);
+    }
+
+    return {
+        ...DEFAULT_CONFIG,
+        ...userConfig,
+        apiLogging: {
+            ...DEFAULT_CONFIG.apiLogging,
+            ...(userConfig.apiLogging || {})
+        },
+        autoActions: userConfig.autoActions || DEFAULT_CONFIG.autoActions
+    };
+}
+
+function findOrCreateTestCase(data, testCase) {
+    let tc = data.find(item => item.testCase === testCase);
+
+    if (!tc) {
+        tc = {
+            testCase,
+            status: 'RUNNING',
+            duration: 0,
+            feature: process.env.HEYNA_FEATURE || 'Login & Authentication',
+            steps: [],
+            executionDate: new Date().toISOString()
+        };
+        data.push(tc);
+    }
+
+    tc.steps = Array.isArray(tc.steps) ? tc.steps : [];
+    return tc;
+}
+
 class ApiLogger {
     constructor(page, testCase, options = {}) {
+        const config = HeynaReporter.getConfig();
+
         this.logs = [];
         this.requests = {};
         this.testCase = testCase;
-        this.include = options.include || ['/api/', 'saucedemo.com'];
+        this.include = options.include || config.apiLogging.include || DEFAULT_CONFIG.apiLogging.include;
 
         page.on('request', request => {
             this.requests[request.url()] = Date.now();
@@ -91,8 +197,24 @@ class ApiLogger {
 
 class HeynaReporter {
     static stepDescriptions = { ...defaultStepDescriptions };
+    static config = loadConfig();
+    static attachedPages = new WeakSet();
+
+    static getConfig() {
+        return this.config;
+    }
 
     static configure(config = {}) {
+        this.config = {
+            ...this.config,
+            ...config,
+            apiLogging: {
+                ...this.config.apiLogging,
+                ...(config.apiLogging || {})
+            },
+            autoActions: config.autoActions || this.config.autoActions
+        };
+
         if (config.project) process.env.HEYNA_PROJECT = config.project;
         if (config.feature) process.env.HEYNA_FEATURE = config.feature;
         if (config.environment) process.env.ENVIRONMENT = config.environment;
@@ -128,7 +250,9 @@ class HeynaReporter {
             executionStartTime: shouldReset
                 ? new Date().toISOString()
                 : this.getMetadata().executionStartTime || new Date().toISOString(),
-            runStatus: 'IN_PROGRESS'
+            runStatus: 'IN_PROGRESS',
+            autoCapture: this.config.autoCapture,
+            screenshotMode: this.config.screenshotMode
         });
     }
 
@@ -136,106 +260,221 @@ class HeynaReporter {
         if (!fs.existsSync(EXECUTION_FILE)) writeJson(EXECUTION_FILE, []);
         if (!fs.existsSync(METADATA_FILE)) this.updateMetadata({});
 
-        const data = readJson(EXECUTION_FILE, []);
-        const existing = data.find(tc => tc.testCase === testCase);
+        mutateExecution(data => {
+            const existing = data.find(tc => tc.testCase === testCase);
 
-        if (existing) {
-            existing.status = 'RUNNING';
-            existing.duration = 0;
-            existing.feature = metadata.feature || existing.feature || process.env.HEYNA_FEATURE || 'Login & Authentication';
-            existing.steps = [];
-            existing.executionDate = new Date().toISOString();
-            delete existing.errorMessage;
-            delete existing.failureScreenshot;
-        } else {
-            data.push({
-                testCase,
-                status: 'RUNNING',
-                duration: 0,
-                feature: metadata.feature || process.env.HEYNA_FEATURE || 'Login & Authentication',
-                steps: [],
-                executionDate: new Date().toISOString()
-            });
-        }
-
-        writeJson(EXECUTION_FILE, data);
+            if (existing) {
+                existing.status = 'RUNNING';
+                existing.duration = 0;
+                existing.feature = metadata.feature || existing.feature || process.env.HEYNA_FEATURE || 'Login & Authentication';
+                existing.steps = [];
+                existing.executionDate = new Date().toISOString();
+                delete existing.errorMessage;
+                delete existing.failureScreenshot;
+            } else {
+                data.push({
+                    testCase,
+                    status: 'RUNNING',
+                    duration: 0,
+                    feature: metadata.feature || process.env.HEYNA_FEATURE || 'Login & Authentication',
+                    steps: [],
+                    executionDate: new Date().toISOString()
+                });
+            }
+        });
     }
 
-    static async step(page, testCase, stepName, action) {
+    static attach(page, testCase, options = {}) {
+        const config = {
+            ...this.config,
+            ...options,
+            autoActions: options.autoActions || this.config.autoActions
+        };
+
+        if (!config.autoCapture || this.attachedPages.has(page)) return page;
+
+        this.attachedPages.add(page);
+        page.__heynaTestCase = testCase;
+        page.__heynaConfig = config;
+
+        this.patchPageActionMethods(page, testCase, config);
+        this.patchLocatorFactory(page, testCase, config);
+
+        return page;
+    }
+
+    static patchPageActionMethods(page, testCase, config) {
+        config.autoActions.forEach(action => {
+            if (typeof page[action] !== 'function' || page[action].__heynaPatched) return;
+
+            const original = page[action].bind(page);
+            const wrapped = async (...args) => {
+                const target = args[0];
+                const name = this.createStepName(action, target);
+
+                return this.captureAutoAction({
+                    page,
+                    testCase,
+                    action,
+                    target,
+                    stepName: name,
+                    execute: () => original(...args),
+                    config
+                });
+            };
+
+            wrapped.__heynaPatched = true;
+            page[action] = wrapped;
+        });
+    }
+
+    static patchLocatorFactory(page, testCase, config) {
+        if (typeof page.locator !== 'function' || page.locator.__heynaPatched) return;
+
+        const originalLocator = page.locator.bind(page);
+        const wrappedLocator = (...args) => {
+            const locator = originalLocator(...args);
+            const target = args[0];
+            return this.wrapLocator(locator, page, testCase, target, config);
+        };
+
+        wrappedLocator.__heynaPatched = true;
+        page.locator = wrappedLocator;
+    }
+
+    static wrapLocator(locator, page, testCase, target, config) {
+        if (!locator || locator.__heynaProxy) return locator;
+
+        return new Proxy(locator, {
+            get: (object, property) => {
+                const value = object[property];
+
+                if (!config.autoActions.includes(property) || typeof value !== 'function') {
+                    return typeof value === 'function' ? value.bind(object) : value;
+                }
+
+                return async (...args) => {
+                    const stepName = this.createStepName(property, target);
+
+                    return this.captureAutoAction({
+                        page,
+                        testCase,
+                        action: property,
+                        target,
+                        stepName,
+                        execute: () => value.apply(object, args),
+                        config
+                    });
+                };
+            }
+        });
+    }
+
+    static async captureAutoAction({ page, testCase, action, target, stepName, execute, config }) {
         const startedAt = Date.now();
+        const timestamp = new Date().toISOString();
 
         try {
-            await action();
-            const screenshot = await this.captureEvidence(page, testCase, stepName);
-            this.addStep(testCase, { name: stepName, status: 'PASS', duration: Date.now() - startedAt, screenshot });
+            const result = await execute();
+            const screenshot = await this.captureScreenshotByMode(page, testCase, stepName, config.screenshotMode, false);
+
+            this.addStep(testCase, {
+                name: stepName,
+                action,
+                target: String(target || ''),
+                status: 'PASS',
+                duration: Date.now() - startedAt,
+                timestamp,
+                mode: 'AUTO',
+                screenshot
+            });
+
+            return result;
         } catch (error) {
             const screenshot = await this.captureEvidence(page, testCase, stepName, 'FAILED');
-            this.addStep(testCase, { name: stepName, status: 'FAIL', duration: Date.now() - startedAt, screenshot, errorMessage: cleanMessage(error.message) });
+
+            this.addStep(testCase, {
+                name: stepName,
+                action,
+                target: String(target || ''),
+                status: 'FAIL',
+                duration: Date.now() - startedAt,
+                timestamp,
+                mode: 'AUTO',
+                screenshot,
+                errorMessage: cleanMessage(error.message)
+            });
+
             throw error;
         }
     }
 
-    static addStep(testCase, step) {
-        const data = readJson(EXECUTION_FILE, []);
-        let tc = data.find(item => item.testCase === testCase);
+    static async step(page, testCase, stepName, action) {
+        const startedAt = Date.now();
+        const timestamp = new Date().toISOString();
 
-        if (!tc) {
-            tc = {
-                testCase,
-                status: 'RUNNING',
-                duration: 0,
-                feature: process.env.HEYNA_FEATURE || 'Login & Authentication',
-                steps: [],
-                executionDate: new Date().toISOString()
-            };
-            data.push(tc);
+        try {
+            const result = await action();
+            const screenshot = await this.captureScreenshotByMode(page, testCase, stepName, this.config.screenshotMode, false);
+            this.addStep(testCase, { name: stepName, status: 'PASS', duration: Date.now() - startedAt, timestamp, mode: 'MANUAL', screenshot });
+            return result;
+        } catch (error) {
+            const screenshot = await this.captureEvidence(page, testCase, stepName, 'FAILED');
+            this.addStep(testCase, { name: stepName, status: 'FAIL', duration: Date.now() - startedAt, timestamp, mode: 'MANUAL', screenshot, errorMessage: cleanMessage(error.message) });
+            throw error;
+        }
+    }
+
+    static async captureScreenshotByMode(page, testCase, stepName, screenshotMode, isFailure) {
+        const mode = screenshotMode || 'failure-only';
+
+        if (isFailure) {
+            return this.captureEvidence(page, testCase, stepName, 'FAILED');
         }
 
-        tc.steps = Array.isArray(tc.steps) ? tc.steps : [];
-        tc.steps.push(step);
-        writeJson(EXECUTION_FILE, data);
+        if (mode === 'on-step') {
+            return this.captureEvidence(page, testCase, stepName);
+        }
+
+        return undefined;
+    }
+
+    static addStep(testCase, step) {
+        mutateExecution(data => {
+            const tc = findOrCreateTestCase(data, testCase);
+            const normalized = {
+                ...step,
+                status: step.status || stepStatus(step.status)
+            };
+
+            if (!normalized.screenshot) delete normalized.screenshot;
+            tc.steps.push(normalized);
+        });
     }
 
     static completeTest(testCase, status, duration, errorMessage, extra = {}) {
-        const data = readJson(EXECUTION_FILE, []);
-        let tc = data.find(item => item.testCase === testCase);
+        mutateExecution(data => {
+            const tc = findOrCreateTestCase(data, testCase);
 
-        if (!tc) {
-            tc = {
-                testCase,
-                status: 'RUNNING',
-                duration: 0,
-                feature: process.env.HEYNA_FEATURE || 'Login & Authentication',
-                steps: [],
-                executionDate: new Date().toISOString()
-            };
-            data.push(tc);
-        }
+            tc.status = normalizeStatus(status);
+            tc.duration = duration || 0;
+            if (errorMessage) tc.errorMessage = cleanMessage(errorMessage);
+            if (extra.failureScreenshot) tc.failureScreenshot = extra.failureScreenshot;
+        });
 
-        tc.status = normalizeStatus(status);
-        tc.duration = duration || 0;
-        if (errorMessage) tc.errorMessage = cleanMessage(errorMessage);
-        if (extra.failureScreenshot) tc.failureScreenshot = extra.failureScreenshot;
-
-        console.log(`[HEYNA]\n${testCase} => ${tc.status}`);
-
-        writeJson(EXECUTION_FILE, data);
+        console.log(`[HEYNA]\n${testCase} => ${normalizeStatus(status)}`);
     }
 
     static markRunningTestsAsFailed(message = 'Test did not complete before report generation.') {
-        const data = readJson(EXECUTION_FILE, []);
-        let changed = false;
-
-        data.forEach(tc => {
-            if (normalizeStatus(tc.status) === 'RUNNING') {
-                tc.status = 'FAILED';
-                tc.errorMessage = tc.errorMessage || message;
-                changed = true;
-                console.log(`[HEYNA]\n${tc.testCase} => FAILED`);
-            }
+        mutateExecution(data => {
+            data.forEach(tc => {
+                if (normalizeStatus(tc.status) === 'RUNNING') {
+                    tc.status = 'FAILED';
+                    tc.errorMessage = tc.errorMessage || message;
+                    console.log(`[HEYNA]\n${tc.testCase} => FAILED`);
+                }
+            });
         });
-
-        if (changed) writeJson(EXECUTION_FILE, data);
     }
 
     static async captureEvidence(page, testCase, stepName, prefix) {
@@ -319,6 +558,40 @@ class HeynaReporter {
             action: `Execute ${String(stepName).replace(/_/g, ' ')}.`,
             expectedResult: `${String(stepName).replace(/_/g, ' ')} completes successfully.`
         };
+    }
+
+    static createStepName(action, target) {
+        const targetName = this.readableTarget(target);
+        const actionName = titleCase(action);
+
+        if (!targetName) {
+            return `${actionName} Element`;
+        }
+
+        return `${actionName} ${targetName}`;
+    }
+
+    static readableTarget(target) {
+        const selector = String(target || '').trim();
+        if (!selector) return '';
+
+        const patterns = [
+            /#([\w-]+)/,
+            /\[name=["']?([^"'\]]+)["']?\]/,
+            /\[aria-label=["']?([^"'\]]+)["']?\]/,
+            /\[placeholder=["']?([^"'\]]+)["']?\]/,
+            /text=["']?([^"']+)["']?/,
+            /label=["']?([^"']+)["']?/
+        ];
+
+        for (const pattern of patterns) {
+            const match = selector.match(pattern);
+            if (match) return titleCase(match[1]);
+        }
+
+        if (/^[a-z]+$/i.test(selector)) return titleCase(selector);
+
+        return '';
     }
 
     static isStaticResource(url = '') {

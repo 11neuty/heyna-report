@@ -83,6 +83,7 @@ test.beforeEach(async ({ page }, testInfo) => {
     currentTC = testInfo.title.replace(/\s+/g, '_');
     currentLogger = Heyna.createApiLogger(page, currentTC);
     Heyna.initializeTest(currentTC);
+    Heyna.attach(page, currentTC);
 });
 
 test.afterEach(async ({ page }, testInfo) => {
@@ -117,21 +118,15 @@ test('TC001 Login Success', async ({ page }) => {
     const loginPage = new LoginPage(page);
 
     await test.step('Open Login Page', async () => {
-        await Heyna.step(page, currentTC, 'Open_Login_Page', async () => {
-            await loginPage.open();
-        });
+        await loginPage.open();
     });
 
     await test.step('Login With Valid User', async () => {
-        await Heyna.step(page, currentTC, 'Login_With_Valid_User', async () => {
-            await loginPage.login('standard_user', 'secret_sauce');
-        });
+        await loginPage.login('standard_user', 'secret_sauce');
     });
 
     await test.step('Verify Login Success', async () => {
-        await Heyna.step(page, currentTC, 'Verify_Login_Success', async () => {
-            await loginPage.verifyLoginSuccess();
-        });
+        await loginPage.verifyLoginSuccess();
     });
 });
 ```
@@ -166,9 +161,11 @@ Execution data:
     "duration": 3200,
     "steps": [
       {
-        "name": "Open_Login_Page",
+        "name": "Fill Username",
+        "action": "fill",
+        "target": "#username",
         "status": "PASS",
-        "screenshot": "evidence/TC001_Login_Success/1710000000000_Open_Login_Page.png"
+        "mode": "AUTO"
       }
     ]
   }

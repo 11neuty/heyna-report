@@ -232,6 +232,12 @@ class HeynaPdfGenerator {
         const desc = Heyna.getStepDescription(step.name);
         const status = this.normalizeStatus(step.status);
         const screenshot = this.resolveScreenshot(step.screenshot);
+        const actionText = step.action
+            ? `Perform ${step.action} on ${step.target || 'element'}.`
+            : desc.action;
+        const expectedText = step.action
+            ? `${desc.stepName} action completes successfully.`
+            : desc.expectedResult;
         const cardHeight = 176;
 
         this.ensureSpace(doc, cardHeight + (screenshot ? 275 : 0));
@@ -247,8 +253,8 @@ class HeynaPdfGenerator {
 
         let y = top + 48;
         y = this.inlineField(doc, 'Step Name', desc.stepName, y);
-        y = this.inlineField(doc, 'Action', desc.action, y);
-        y = this.inlineField(doc, 'Expected Result', desc.expectedResult, y);
+        y = this.inlineField(doc, 'Action', actionText, y);
+        y = this.inlineField(doc, 'Expected Result', expectedText, y);
         y = this.inlineField(doc, 'Actual Result', step.errorMessage || `${desc.stepName} ${status.toLowerCase()}.`, y);
         this.inlineField(doc, 'Result', status, y, this.statusColor(status));
 

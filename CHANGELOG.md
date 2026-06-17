@@ -7,6 +7,7 @@ All notable changes to HEYNA REPORT will be documented in this file.
 ### Added
 
 - Screenshot Evidence per step
+- Auto Action Capture for native Playwright actions
 - API Logging
 - PDF Report generation with PDFKit
 - Execution Summary
@@ -18,6 +19,7 @@ All notable changes to HEYNA REPORT will be documented in this file.
 - Footer with page numbering
 - GitHub Actions workflow
 - Reusable CommonJS reporting utilities
+- `heyna.config.js` for auto-capture configuration
 
 ### Fixed
 

@@ -20,6 +20,7 @@ The framework is suitable for:
 ## Features
 
 - [x] Screenshot Evidence per step
+- [x] Auto Action Capture for native Playwright actions
 - [x] API Logging
 - [x] Step Tracking
 - [x] Execution Summary
@@ -72,6 +73,7 @@ Core components:
 
 - `utils/HeynaReporter.js`: Runtime reporting facade for steps, screenshots, API logs, metadata, and execution results.
 - `utils/HeynaPdfGenerator.js`: PDFKit-based report renderer for HEYNA REPORT.
+- `heyna.config.js`: Auto-capture, screenshot, action, and API logging configuration.
 - `assets/heyna-logo.png`: Optional logo used automatically on the cover page.
 - `test-results/execution.json`: Structured execution data used by the PDF generator.
 - `evidence/`: Screenshot and API log storage per test case.
@@ -108,6 +110,38 @@ node regenerate-report.js
 ```
 
 For a 5-minute walkthrough, see [QUICK_START.md](QUICK_START.md).
+
+## Auto Action Capture
+
+HEYNA REPORT v2.0 can capture supported Playwright actions automatically. Tests can keep native Playwright syntax:
+
+```js
+await page.fill('#username', 'admin');
+await page.fill('#password', 'secret');
+await page.click('#login');
+```
+
+HEYNA REPORT records readable steps such as:
+
+```text
+Fill Username
+Fill Password
+Click Login
+```
+
+Enable auto-capture once per test after `initializeTest()`:
+
+```js
+Heyna.attach(page, currentTC);
+```
+
+Manual reporting is still supported:
+
+```js
+await Heyna.step(page, currentTC, 'Custom Business Step', async () => {
+    await page.click('#submit');
+});
+```
 
 ## Generate Report
 
@@ -190,6 +224,31 @@ assets/heyna-logo.png
 ```
 
 If the logo is missing, HEYNA REPORT falls back to text branding on the cover page.
+
+### Auto Capture
+
+Configure auto-capture in `heyna.config.js`:
+
+```js
+module.exports = {
+    autoCapture: true,
+    screenshotMode: 'failure-only',
+    autoActions: [
+        'fill',
+        'click',
+        'check',
+        'uncheck',
+        'selectOption',
+        'press'
+    ]
+};
+```
+
+Screenshot modes:
+
+- `disabled`: Do not capture screenshots for passed auto steps.
+- `failure-only`: Capture screenshots only when an action fails.
+- `on-step`: Capture screenshots for every captured action.
 
 ## Roadmap
 

@@ -70,11 +70,14 @@ test('Sample Test', async ({ page }) => {
     const testCase = 'Sample_Test';
 
     Heyna.initializeTest(testCase);
+    Heyna.attach(page, testCase);
 
-    await Heyna.step(page, testCase, 'Open_Page', async () => {
-        await page.goto('https://example.com');
-    });
+    await page.fill('#username', 'admin');
+    await page.fill('#password', 'secret');
+    await page.click('#login');
 
     Heyna.completeTest(testCase, 'PASSED', 1000);
 });
 ```
+
+`Heyna.attach(page, testCase)` enables Auto Action Capture for supported actions such as `fill`, `click`, `check`, `uncheck`, `selectOption`, and `press`.

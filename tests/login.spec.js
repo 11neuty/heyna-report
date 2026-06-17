@@ -43,6 +43,11 @@ test.beforeEach(
                 currentTC
             );
 
+        Heyna.attach(
+            page,
+            currentTC
+        );
+
     }
 );
 
@@ -95,70 +100,35 @@ test('TC001_LoginSuccess', async ({ page }) => {
 
     await test.step('Open Login Page', async () => {
 
-        await Heyna.step(
-            page,
-            currentTC,
-            'Step01_Open_Login_Page',
-            async () => {
-                await loginPage.open();
-            }
-        );
+        await loginPage.open();
 
     });
 
     await test.step('Input Username', async () => {
 
-        await Heyna.step(
-            page,
-            currentTC,
-            'Step02_Input_Username',
-            async () => {
-                await loginPage.inputUsername(
-                    'standard_user'
-                );
-            }
+        await loginPage.inputUsername(
+            'standard_user'
         );
 
     });
 
     await test.step('Input Password', async () => {
 
-        await Heyna.step(
-            page,
-            currentTC,
-            'Step03_Input_Password',
-            async () => {
-                await loginPage.inputPassword(
-                    'secret_sauce'
-                );
-            }
+        await loginPage.inputPassword(
+            'secret_sauce'
         );
 
     });
 
     await test.step('Click Login', async () => {
 
-        await Heyna.step(
-            page,
-            currentTC,
-            'Step04_Click_Login',
-            async () => {
-                await loginPage.clickLogin();
-            }
-        );
+        await loginPage.clickLogin();
 
     });
 
     await test.step('Verify Login Success', async () => {
 
-        await Heyna.step(
-            page,
-            currentTC,
-            'Step05_Verify_Login_Success',
-            async () => {
-                await loginPage.verifyLoginSuccess();
-            }
-        );
+        await loginPage.verifyLoginSuccess();
 
     });
 
@@ -172,16 +142,7 @@ test('TC002_LoginFailed', async ({ page }) => {
         'Open Login Page',
         async () => {
 
-            await Heyna.step(
-                page,
-                currentTC,
-                'Step01_Open_Login_Page',
-                async () => {
-
-                    await loginPage.open();
-
-                }
-            );
+            await loginPage.open();
 
         }
     );
@@ -190,21 +151,12 @@ test('TC002_LoginFailed', async ({ page }) => {
         'Input Invalid Credentials',
         async () => {
 
-            await Heyna.step(
-                page,
-                currentTC,
-                'Step02_Input_Invalid_Credentials',
-                async () => {
+            await loginPage.inputUsername(
+                'invalid_user'
+            );
 
-                    await loginPage.inputUsername(
-                        'invalid_user'
-                    );
-
-                    await loginPage.inputPassword(
-                        'invalid_password'
-                    );
-
-                }
+            await loginPage.inputPassword(
+                'invalid_password'
             );
 
         }
@@ -214,16 +166,7 @@ test('TC002_LoginFailed', async ({ page }) => {
         'Click Login',
         async () => {
 
-            await Heyna.step(
-                page,
-                currentTC,
-                'Step03_Click_Login',
-                async () => {
-
-                    await loginPage.clickLogin();
-
-                }
-            );
+            await loginPage.clickLogin();
 
         }
     );
@@ -232,16 +175,7 @@ test('TC002_LoginFailed', async ({ page }) => {
         'Verify Error Message',
         async () => {
 
-            await Heyna.step(
-                page,
-                currentTC,
-                'Step04_Verify_Error_Message',
-                async () => {
-
-                    await loginPage.verifyLoginError();
-
-                }
-            );
+            await loginPage.verifyLoginError();
 
         }
     );

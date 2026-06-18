@@ -5,7 +5,7 @@ const Heyna = require('./HeynaReporter');
 const BRAND = {
     name: 'HEYNA REPORT',
     tagline: 'From Execution to Evidence.',
-    subtitle: 'HTML Dashboard Foundation'
+    subtitle: ''
 };
 
 class HeynaHtmlDashboardGenerator {
@@ -49,21 +49,17 @@ class HeynaHtmlDashboardGenerator {
     }
 
     static header(metadata) {
-        const items = [
-            ['Project', metadata.project],
-            ['Feature', metadata.feature],
-            ['Environment', metadata.environment],
-            ['Browser', metadata.browser],
-            ['Tool', metadata.automationTool],
-            ['Executed By', metadata.executedBy],
-            ['Run Status', metadata.runStatus],
-            ['Started', this.formatDate(metadata.executionStartTime)],
-            ['Completed', this.formatDate(metadata.executionEndTime)]
+const items = [
+            ["Project", metadata.project],
+            ["Feature", metadata.feature],
+            ["Environment", metadata.environment],
+            ["Browser", metadata.browser],
+            ["Run Status", metadata.runStatus],
+            ["Duration", this.formatDuration(metadata.executionStartTime && metadata.executionEndTime ? (new Date(metadata.executionEndTime) - new Date(metadata.executionStartTime)) : 0)]
         ];
 
         return `<header class="dashboard-header">
   <div>
-    <p class="eyebrow">${this.escape(BRAND.subtitle)}</p>
     <h1>${this.escape(BRAND.name)}</h1>
     <p class="tagline">${this.escape(BRAND.tagline)}</p>
   </div>
@@ -74,19 +70,19 @@ class HeynaHtmlDashboardGenerator {
     }
 
     static summaryCards(summary) {
-        const cards = [
-            ['Total Tests', summary.total, 'blue'],
-            ['Passed', summary.passed, 'green'],
-            ['Failed', summary.failed, 'red'],
-            ['Skipped', summary.skipped, 'orange'],
-            ['Pass Rate', `${summary.passRate}%`, 'navy'],
-            ['Duration', this.formatDuration(summary.totalDuration), 'gray']
+const cards = [
+            ["TOTAL TESTS", summary.total, "blue"],
+            ["PASSED", summary.passed, "green"],
+            ["FAILED", summary.failed, "red"],
+            ["SKIPPED", summary.skipped, "orange"],
+            ["PASS RATE", `${summary.passRate}%`, "navy"],
+            ["DURATION", this.formatDuration(summary.totalDuration), "gray"]
         ];
 
-        return `<section class="panel" aria-labelledby="summary-heading">
+        return `<section class="panel" id="overview" aria-labelledby="summary-heading">
   <div class="section-heading">
-    <p class="eyebrow">Run Summary</p>
-    <h2 id="summary-heading">Summary Cards</h2>
+    
+    
   </div>
   <div class="summary-grid">
     ${cards.map(([label, value, tone]) => `<article class="summary-card tone-${tone}"><span>${this.escape(label)}</span><strong>${this.escape(value)}</strong></article>`).join('\n    ')}
@@ -108,11 +104,8 @@ class HeynaHtmlDashboardGenerator {
     </tr>`;
         }).join('\n    ');
 
-        return `<section class="panel" aria-labelledby="test-case-heading">
-  <div class="section-heading">
-    <p class="eyebrow">Execution Detail</p>
-    <h2 id="test-case-heading">Test Case Table</h2>
-  </div>
+        return `<section class="panel" id="test-cases" aria-labelledby="test-case-heading">
+
   ${executionData.length ? `<div class="table-wrap"><table>
     <thead><tr><th scope="col">Test Case</th><th scope="col">Feature</th><th scope="col">Status</th><th scope="col">Duration</th><th scope="col">Steps</th><th scope="col">Retries</th><th scope="col">Execution Date</th></tr></thead>
     <tbody>${rows}</tbody>
@@ -122,11 +115,7 @@ class HeynaHtmlDashboardGenerator {
 
     static coverageDiagnostics(coverage) {
         if (!coverage) {
-            return `<section class="panel" aria-labelledby="coverage-heading">
-  <div class="section-heading">
-    <p class="eyebrow">Diagnostics</p>
-    <h2 id="coverage-heading">Coverage Diagnostics</h2>
-  </div>
+                        return `<section class="panel" aria-labelledby="coverage-heading">
   <p class="empty-state">No auto-capture coverage data available.</p>
 </section>`;
         }
@@ -139,11 +128,8 @@ class HeynaHtmlDashboardGenerator {
             return `<tr><td>${this.escape(action)}</td><td>${this.escape(detected)}</td><td>${this.escape(captured)}</td><td>${this.escape(missed)}</td><td>${this.escape(rate)}</td></tr>`;
         }).join('\n      ');
 
-        return `<section class="panel" aria-labelledby="coverage-heading">
-  <div class="section-heading">
-    <p class="eyebrow">Diagnostics</p>
-    <h2 id="coverage-heading">Coverage Diagnostics</h2>
-  </div>
+        return `<section class="panel" id="coverage" aria-labelledby="coverage-heading">
+
   <div class="summary-grid diagnostics-grid">
     <article class="summary-card tone-blue"><span>Detected</span><strong>${this.escape(coverage.detected)}</strong></article>
     <article class="summary-card tone-green"><span>Captured</span><strong>${this.escape(coverage.captured)}</strong></article>
@@ -163,11 +149,8 @@ class HeynaHtmlDashboardGenerator {
             .slice(-5)
             .reverse();
 
-        return `<section class="panel" aria-labelledby="failed-heading">
-  <div class="section-heading">
-    <p class="eyebrow">Failure Focus</p>
-    <h2 id="failed-heading">Recent Failed Tests</h2>
-  </div>
+        return `<section class="panel" id="failures" aria-labelledby="failed-heading">
+
   ${failedTests.length ? `<div class="failed-list">${failedTests.map(testCase => `<article class="failed-card"><strong>${this.escape(testCase.testCase)}</strong><p>${this.escape(testCase.errorMessage || 'No error message captured.')}</p></article>`).join('\n    ')}</div>` : '<p class="empty-state success">No failed tests found in this run.</p>'}
 </section>`;
     }
@@ -191,7 +174,7 @@ class HeynaHtmlDashboardGenerator {
     }
 
     static styles() {
-        return `:root{--navy:#123A63;--navy-dark:#0B2A47;--green:#16A05D;--red:#D32F2F;--orange:#F59E0B;--blue:#2563EB;--black:#1F2937;--gray:#6B7280;--light:#F8FAFC;--border:#E5E7EB;--white:#FFFFFF}*{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#eef5ff 0%,#f8fafc 40%,#fff 100%);color:var(--black);font-family:Inter,Segoe UI,Arial,sans-serif}.dashboard-shell{width:min(1180px,calc(100% - 32px));margin:0 auto;padding:32px 0}.dashboard-header{display:grid;grid-template-columns:minmax(260px,1fr) minmax(320px,1.4fr);gap:24px;align-items:stretch;background:var(--navy);color:var(--white);border-radius:22px;padding:30px;box-shadow:0 20px 45px rgba(18,58,99,.18)}h1{font-size:clamp(2rem,5vw,4rem);line-height:1;margin:8px 0}.tagline{color:#dbeafe;margin:0}.eyebrow{margin:0 0 6px;text-transform:uppercase;letter-spacing:.12em;font-size:.76rem;font-weight:700;color:#93c5fd}.metadata-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0}.metadata-item{background:rgba(255,255,255,.11);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:12px}.metadata-item dt{font-size:.72rem;color:#bfdbfe;text-transform:uppercase;letter-spacing:.08em}.metadata-item dd{margin:5px 0 0;font-weight:700;overflow-wrap:anywhere}.panel{background:var(--white);border:1px solid var(--border);border-radius:20px;margin-top:22px;padding:24px;box-shadow:0 12px 30px rgba(15,23,42,.06)}.section-heading{display:flex;justify-content:space-between;gap:16px;align-items:end;margin-bottom:16px}.section-heading h2{margin:0;color:var(--navy);font-size:1.35rem}.summary-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:14px}.summary-card{border:1px solid var(--border);border-left:5px solid var(--gray);border-radius:16px;padding:16px;background:var(--light)}.summary-card span{display:block;color:var(--gray);font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em}.summary-card strong{display:block;font-size:1.7rem;margin-top:8px;color:var(--black)}.tone-blue{border-left-color:var(--blue)}.tone-green{border-left-color:var(--green)}.tone-red{border-left-color:var(--red)}.tone-orange{border-left-color:var(--orange)}.tone-navy{border-left-color:var(--navy)}.tone-gray{border-left-color:var(--gray)}.table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:16px}table{width:100%;border-collapse:collapse;min-width:760px;background:var(--white)}th,td{text-align:left;padding:13px 14px;border-bottom:1px solid var(--border);vertical-align:top}th{background:var(--navy);color:var(--white);font-size:.78rem;text-transform:uppercase;letter-spacing:.06em}tbody tr:nth-child(even){background:var(--light)}tbody tr:last-child td{border-bottom:0}.status{display:inline-flex;align-items:center;border-radius:999px;padding:4px 10px;font-size:.76rem;font-weight:800}.status-passed{background:#dcfce7;color:#166534}.status-failed{background:#fee2e2;color:#991b1b}.status-skipped{background:#ffedd5;color:#9a3412}.status-running{background:#dbeafe;color:#1e40af}.status-unknown{background:#e5e7eb;color:#374151}.diagnostics-grid{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:18px}.empty-state{margin:0;padding:18px;border:1px dashed var(--border);border-radius:14px;background:var(--light);color:var(--gray)}.empty-state.success{border-color:#bbf7d0;background:#f0fdf4;color:#166534}.failed-list{display:grid;gap:12px}.failed-card{border:1px solid #fecaca;background:#fff7f7;border-radius:14px;padding:14px}.failed-card strong{color:var(--red)}.failed-card p{margin:8px 0 0;color:var(--gray)}.dashboard-footer{text-align:center;color:var(--gray);font-size:.85rem;margin:26px 0 8px}@media (max-width:900px){.dashboard-header{grid-template-columns:1fr}.metadata-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.summary-grid,.diagnostics-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media (max-width:560px){.dashboard-shell{width:min(100% - 20px,1180px);padding:16px 0}.dashboard-header,.panel{padding:18px;border-radius:16px}.metadata-grid,.summary-grid,.diagnostics-grid{grid-template-columns:1fr}.section-heading{display:block}}`;
+        return `:root{--navy:#123A63;--navy-dark:#0B2A47;--green:#16A05D;--red:#D32F2F;--orange:#F59E0B;--blue:#2563EB;--black:#1F2937;--gray:#6B7280;--light:#F8FAFC;--border:#E5E7EB;--white:#FFFFFF}*{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#eef5ff 0%,#f8fafc 40%,#fff 100%);color:var(--black);font-family:Inter,Segoe UI,Arial,sans-serif}.dashboard-shell{width:min(1180px,calc(100% - 32px));margin:0 auto;padding:32px 0}.dashboard-header{display:grid;grid-template-columns:minmax(260px,1fr) minmax(320px,1.4fr);gap:24px;align-items:stretch;background:var(--navy);color:var(--white);border-radius:22px;padding:24px;box-shadow:0 20px 45px rgba(18,58,99,.18)}h1{font-size:clamp(2rem,5vw,4rem);line-height:1;margin:8px 0}.tagline{color:#dbeafe;margin:0}.eyebrow{margin:0 0 6px;text-transform:uppercase;letter-spacing:.12em;font-size:.76rem;font-weight:700;color:#93c5fd}.metadata-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0}.metadata-item{background:rgba(255,255,255,.11);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:12px}.metadata-item dt{font-size:.72rem;color:#bfdbfe;text-transform:uppercase;letter-spacing:.08em}.metadata-item dd{margin:5px 0 0;font-weight:700;overflow-wrap:anywhere}.panel{background:var(--white);border:1px solid var(--border);border-radius:20px;margin-top:18px;padding:24px;box-shadow:0 12px 30px rgba(15,23,42,.06)}.section-heading{display:flex;justify-content:space-between;gap:16px;align-items:end;margin-bottom:16px}.section-heading h2{margin:0;color:var(--navy);font-size:1.35rem}.summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.summary-card{border:1px solid var(--border);border-left:5px solid var(--gray);border-radius:16px;padding:16px;background:var(--light)}.summary-card span{display:block;color:var(--black);font-weight:700;font-size:.75rem;text-transform:uppercase;letter-spacing:.06em}.summary-card strong{display:block;font-size:1.7rem;margin-top:8px;color:var(--black)}.tone-blue{border-left-color:var(--blue)}.tone-green{border-left-color:var(--green)}.tone-red{border-left-color:var(--red)}.tone-orange{border-left-color:var(--orange)}.tone-navy{border-left-color:var(--navy)}.tone-gray{border-left-color:var(--gray)}.table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:16px}table{width:100%;border-collapse:collapse;min-width:760px;background:var(--white)}th,td{text-align:left;padding:13px 14px;border-bottom:1px solid var(--border);vertical-align:top}th{background:var(--navy);color:var(--white);font-size:.78rem;text-transform:uppercase;letter-spacing:.06em}tbody tr:nth-child(even){background:var(--light)}tbody tr:last-child td{border-bottom:0}.status{display:inline-flex;align-items:center;border-radius:999px;padding:4px 10px;font-size:.76rem;font-weight:800}.status-passed{background:#dcfce7;color:#166534}.status-failed{background:#fee2e2;color:#991b1b}.status-skipped{background:#ffedd5;color:#9a3412}.status-running{background:#dbeafe;color:#1e40af}.status-unknown{background:#e5e7eb;color:#374151}.diagnostics-grid{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:18px}.empty-state{margin:0;padding:18px;border:1px dashed var(--border);border-radius:14px;background:var(--light);color:var(--gray)}.empty-state.success{border-color:#bbf7d0;background:#f0fdf4;color:#166534}.failed-list{display:grid;gap:12px}.failed-card{border:1px solid #fecaca;background:#fff7f7;border-radius:14px;padding:14px}.failed-card strong{color:var(--red)}.failed-card p{margin:8px 0 0;color:var(--gray)}.dashboard-footer{text-align:center;color:var(--gray);font-size:.78rem;margin:26px 0 8px}@media (max-width:900px){.dashboard-header{grid-template-columns:1fr}.metadata-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.diagnostics-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media (max-width:560px){.dashboard-shell{width:min(100% - 20px,1180px);padding:16px 0}.dashboard-header,.panel{padding:18px;border-radius:16px}.metadata-grid,.summary-grid,.diagnostics-grid{grid-template-columns:1fr}.section-heading{display:block}}`;
     }
 
     static escape(value) {

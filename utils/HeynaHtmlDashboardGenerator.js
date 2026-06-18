@@ -151,7 +151,18 @@ const cards = [
 
         return `<section class="panel" id="failures" aria-labelledby="failed-heading">
 
-  ${failedTests.length ? `<div class="failed-list">${failedTests.map(testCase => `<article class="failed-card"><strong>${this.escape(testCase.testCase)}</strong><p>${this.escape(testCase.errorMessage || 'No error message captured.')}</p></article>`).join('\n    ')}</div>` : '<p class="empty-state success">No failed tests found in this run.</p>'}
+  ${failedTests.length ? `<div class="failed-list">${failedTests.map(testCase => {
+    const testId = this.escape(testCase.testCase).replace(/\s+/g, '-');
+    let html = `<article class="failed-card" id="${testId}-failure"><strong>${this.escape(testCase.testCase)}</strong><p>${this.escape(testCase.errorMessage || 'No error message captured.')}</p>`;
+    if (testCase.failureScreenshot) {
+      const screenshotPath = testCase.failureScreenshot.replace(/\\/g, "/");
+    html += `<div class="failure-screenshot"><img src="${this.escape("../" + screenshotPath)}" alt="${this.escape(testCase.testCase)} failure" loading="lazy"></div>`;
+    } else {
+      html += `<p class="empty-state failure-missing">No failure screenshot available.</p>`;
+    }
+    html += `</article>`;
+    return html;
+  }).join('\n    ')}</div>` : '<p class="empty-state success">No failed tests found in this run.</p>'}
 </section>`;
     }
 

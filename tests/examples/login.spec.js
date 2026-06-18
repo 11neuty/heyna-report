@@ -110,7 +110,7 @@ test('TC001_LoginSuccess', async ({ page }) => {
     await test.step('Input Username', async () => {
 
         await loginPage.inputUsername(
-            'standard_user'
+            'standard_usr'
         );
 
     });

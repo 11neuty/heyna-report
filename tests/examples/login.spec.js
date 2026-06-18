@@ -1,6 +1,6 @@
 const { test } = require('@playwright/test');
-const { LoginPage } = require('../pages/LoginPage');
-const Heyna = require('../utils/HeynaReporter');
+const { LoginPage } = require('../../pages/LoginPage');
+const Heyna = require('../../utils/HeynaReporter');
 
 let currentTC;
 let currentLogger;

@@ -1,4 +1,4 @@
-# Sample Project
+﻿# Sample Project
 
 This document shows how to use HEYNA REPORT in a Playwright project.
 
@@ -6,18 +6,22 @@ This document shows how to use HEYNA REPORT in a Playwright project.
 
 ```text
 sample-project/
-├── assets/
-│   └── heyna-logo.png
-├── pages/
-│   ├── BasePage.js
-│   └── LoginPage.js
-├── tests/
-│   └── login.spec.js
-├── utils/
-│   ├── HeynaReporter.js
-│   └── HeynaPdfGenerator.js
-├── package.json
-└── playwright.config.js
+|-- assets/
+|   |-- heyna-logo.png
+|-- pages/
+|   |-- BasePage.js
+|   |-- LoginPage.js
+|-- tests/
+|   |-- examples/
+|   |   |-- login.spec.js
+|   |-- framework/
+|   |   |-- auto-capture.spec.js
+|   |   |-- pdf-generator.spec.js
+|-- utils/
+|   |-- HeynaReporter.js
+|   |-- HeynaPdfGenerator.js
+|-- package.json
+|-- playwright.config.js
 ```
 
 ## Sample Page Object
@@ -60,11 +64,11 @@ module.exports = { LoginPage };
 ## Sample Test
 
 ```js
-// tests/login.spec.js
+// tests/examples/login.spec.js
 const { test } = require('@playwright/test');
-const { LoginPage } = require('../pages/LoginPage');
-const Heyna = require('../utils/HeynaReporter');
-const { HeynaPdfGenerator } = require('../utils/HeynaPdfGenerator');
+const { LoginPage } = require('../../pages/LoginPage');
+const Heyna = require('../../utils/HeynaReporter');
+const { HeynaPdfGenerator } = require('../../utils/HeynaPdfGenerator');
 
 let currentTC;
 let currentLogger;
@@ -144,11 +148,11 @@ Evidence per test case:
 
 ```text
 evidence/
-└── TC001_Login_Success/
-    ├── 1710000000000_Open_Login_Page.png
-    ├── 1710000000001_Login_With_Valid_User.png
-    ├── 1710000000002_Verify_Login_Success.png
-    └── api-log.json
+â””â”€â”€ TC001_Login_Success/
+    â”œâ”€â”€ 1710000000000_Open_Login_Page.png
+    â”œâ”€â”€ 1710000000001_Login_With_Valid_User.png
+    â”œâ”€â”€ 1710000000002_Verify_Login_Success.png
+    â””â”€â”€ api-log.json
 ```
 
 Execution data:

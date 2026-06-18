@@ -1,4 +1,4 @@
-# Changelog
+﻿# Changelog
 
 All notable changes to HEYNA REPORT will be documented in this file.
 
@@ -20,6 +20,11 @@ All notable changes to HEYNA REPORT will be documented in this file.
 - GitHub Actions workflow
 - Reusable CommonJS reporting utilities
 - `heyna.config.js` for auto-capture configuration
+
+### Changed
+
+- Reorganized Playwright tests into `tests/examples/` for sample usage and `tests/framework/` for framework regression coverage.
+- Renamed `pdf-page-management.spec.js` to `pdf-generator.spec.js` under `tests/framework/`.
 
 ### Fixed
 

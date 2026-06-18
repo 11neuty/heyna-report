@@ -1,4 +1,4 @@
-# Quick Start
+﻿# Quick Start
 
 Get HEYNA REPORT running in about 5 minutes.
 
@@ -62,9 +62,11 @@ node regenerate-report.js
 
 ## Minimal Test Usage
 
+Place example tests under `tests/examples/` and framework regression tests under `tests/framework/`.
+
 ```js
 const { test } = require('@playwright/test');
-const Heyna = require('../utils/HeynaReporter');
+const Heyna = require('../../utils/HeynaReporter');
 
 test('Sample Test', async ({ page }) => {
     const testCase = 'Sample_Test';

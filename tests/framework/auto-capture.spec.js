@@ -1,6 +1,6 @@
 const fs = require('fs');
 const { test, expect } = require('@playwright/test');
-const Heyna = require('../utils/HeynaReporter');
+const Heyna = require('../../utils/HeynaReporter');
 
 let currentTC;
 let currentLogger;

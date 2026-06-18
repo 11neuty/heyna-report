@@ -1,4 +1,9 @@
+<<<<<<< HEAD
 # HEYNA REPORT
+=======
+﻿# HEYNA REPORT
+<img width="1920" height="1080" alt="demo" src="https://github.com/user-attachments/assets/8710e36e-e140-41c8-8a8e-38fdd207a9c9" />
+>>>>>>> 9a5d1c3 (refactor: separate example and framework test suites)
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/8710e36e-e140-41c8-8a8e-38fdd207a9c9" alt="HEYNA REPORT Demo">
@@ -146,6 +151,7 @@ No manual reporting steps required.
 
 ```text
 .
+<<<<<<< HEAD
 ├── assets/
 │   └── heyna-logo.png
 │
@@ -179,6 +185,44 @@ No manual reporting steps required.
 ```
 
 ---
+=======
+|-- assets/
+|   |-- heyna-logo.png
+|-- pages/
+|   |-- BasePage.js
+|   |-- LoginPage.js
+|-- tests/
+|   |-- examples/
+|   |   |-- login.spec.js
+|   |-- framework/
+|   |   |-- auto-capture.spec.js
+|   |   |-- pdf-generator.spec.js
+|-- utils/
+|   |-- HeynaReporter.js
+|   |-- HeynaPdfGenerator.js
+|-- reports/
+|   |-- HeynaReport.pdf
+|-- evidence/
+|   |-- <test-case>/
+|-- test-results/
+|   |-- execution.json
+|   |-- metadata.json
+|-- playwright.config.js
+|-- regenerate-report.js
+|-- package.json
+```
+
+Core components:
+
+- `utils/HeynaReporter.js`: Runtime reporting facade for steps, screenshots, API logs, metadata, and execution results.
+- `utils/HeynaPdfGenerator.js`: PDFKit-based report renderer for HEYNA REPORT.
+- `heyna.config.js`: Auto-capture, screenshot, action, and API logging configuration.
+- `assets/heyna-logo.png`: Optional logo used automatically on the cover page.
+- `test-results/execution.json`: Structured execution data used by the PDF generator.
+- `evidence/`: Screenshot and API log storage per test case.
+- `tests/examples/`: Sample usage tests that demonstrate HEYNA REPORT integration.
+- `tests/framework/`: Framework regression tests for auto-capture and PDF generation behavior.
+>>>>>>> 9a5d1c3 (refactor: separate example and framework test suites)
 
 ## Installation
 
@@ -207,8 +251,89 @@ npx playwright install
 
 Initialize HEYNA REPORT:
 
+<<<<<<< HEAD
 ```javascript
 const Heyna = require('../utils/HeynaReporter');
+=======
+```bash
+npm test
+```
+
+Run from a clean state:
+
+```bash
+npm run test:clean
+```
+
+Regenerate the PDF report from existing test result data:
+
+```bash
+node regenerate-report.js
+```
+
+For a 5-minute walkthrough, see [QUICK_START.md](QUICK_START.md).
+
+## Auto Action Capture
+
+HEYNA REPORT v2.0 can capture supported Playwright actions automatically. Tests can keep native Playwright syntax:
+
+```js
+await page.fill('#username', 'admin');
+await page.fill('#password', 'secret');
+await page.click('#login');
+```
+
+HEYNA REPORT records readable steps such as:
+
+```text
+Fill Username
+Fill Password
+Click Login
+```
+
+Enable auto-capture once per test after `initializeTest()`:
+
+```js
+Heyna.attach(page, currentTC);
+```
+
+Manual reporting is still supported:
+
+```js
+await Heyna.step(page, currentTC, 'Custom Business Step', async () => {
+    await page.click('#submit');
+});
+```
+
+## Generate Report
+
+HEYNA REPORT is generated automatically in `test.afterAll()`:
+
+```js
+const { HeynaPdfGenerator } = require('../../utils/HeynaPdfGenerator');
+
+test.afterAll(async () => {
+    Heyna.markRunningTestsAsFailed();
+    await HeynaPdfGenerator.generate();
+});
+```
+
+Output files:
+
+```text
+reports/HeynaReport.pdf
+reports/TestExecutionReport.pdf
+```
+
+`TestExecutionReport.pdf` is kept as a legacy-compatible copy.
+
+## Configuration
+
+Configure project metadata in your test setup:
+
+```js
+const Heyna = require('../../utils/HeynaReporter');
+>>>>>>> 9a5d1c3 (refactor: separate example and framework test suites)
 
 test.beforeAll(async () => {
 

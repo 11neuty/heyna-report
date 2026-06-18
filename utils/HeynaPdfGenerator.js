@@ -70,7 +70,9 @@ class HeynaPdfGenerator {
                     this.testCaseDetail(doc, testCase, index + 1);
                 });
 
-                this.footer(doc);
+                const contentPageCount = this.pageCount(doc);
+                this.footer(doc, contentPageCount);
+                this.validatePageCount(doc, contentPageCount);
                 doc.end();
             } catch (error) {
                 reject(error);
@@ -511,13 +513,14 @@ class HeynaPdfGenerator {
             .stroke(COLORS.midGray);
     }
 
-    static footer(doc) {
+    static footer(doc, totalPages = this.pageCount(doc)) {
         const range = doc.bufferedPageRange();
-        for (let index = range.start; index < range.start + range.count; index += 1) {
+        const end = range.start + totalPages;
+        for (let index = range.start; index < end; index += 1) {
             doc.switchToPage(index);
 
             const pageNumber = index + 1;
-            const footerY = PAGE.height - 54;
+            const footerY = doc.page.height - doc.page.margins.bottom - 22;
 
             doc.moveTo(PAGE.margin, footerY - 10)
                 .lineTo(PAGE.width - PAGE.margin, footerY - 10)
@@ -525,16 +528,39 @@ class HeynaPdfGenerator {
                 .stroke(COLORS.midGray);
 
             doc.font('Helvetica-Bold').fontSize(8).fillColor(COLORS.navy)
-                .text(BRAND.name, PAGE.margin, footerY, { width: 150, align: 'left' });
+                .text(BRAND.name, PAGE.margin, footerY, {
+                    width: 150,
+                    align: 'left',
+                    lineBreak: false
+                });
             doc.font('Helvetica').fontSize(8).fillColor(COLORS.gray)
-                .text(`Page ${pageNumber} of ${range.count}`, PAGE.margin, footerY, {
+                .text(`Page ${pageNumber} of ${totalPages}`, PAGE.margin, footerY, {
                     width: this.contentWidth(doc),
-                    align: 'center'
+                    align: 'center',
+                    lineBreak: false
                 });
             doc.text(BRAND.footer, PAGE.width - PAGE.margin - 210, footerY, {
                 width: 210,
-                align: 'right'
+                align: 'right',
+                lineBreak: false
             });
+        }
+    }
+
+    static pageCount(doc) {
+        return doc.bufferedPageRange().count;
+    }
+
+    static validatePageCount(doc, expectedPages) {
+        const generatedPages = this.pageCount(doc);
+
+        if (generatedPages !== expectedPages) {
+            console.warn([
+                'WARNING:',
+                'Blank page generation detected',
+                `Generated Pages: ${generatedPages}`,
+                `Expected Pages: ${expectedPages}`
+            ].join('\n'));
         }
     }
 

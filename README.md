@@ -57,45 +57,44 @@ HEYNA REPORT automatically generates a structured evidence report ready for:
 
 ### Auto Action Capture
 
-Automatically captures native Playwright actions without manual reporting code.
+Automatically captures native Playwright actions without requiring manual reporting code.
 
-Supported actions:
+Supported Actions:
 
 | Action           | Supported |
 | ---------------- | --------- |
-| fill()           | âœ…         |
-| click()          | âœ…         |
-| check()          | âœ…         |
-| uncheck()        | âœ…         |
-| selectOption()   | âœ…         |
-| press()          | âœ…         |
-| hover()          | âœ…         |
-| dblclick()       | âœ…         |
-| dragAndDrop()    | âœ…         |
-| setInputFiles()  | âœ…         |
-| tap()            | âœ…         |
-| focus()          | âœ…         |
-| blur()           | âœ…         |
-| keyboard.press() | âœ…         |
-| mouse.click()    | âœ…         |
+| fill()           | Yes       |
+| click()          | Yes       |
+| check()          | Yes       |
+| uncheck()        | Yes       |
+| selectOption()   | Yes       |
+| press()          | Yes       |
+| hover()          | Yes       |
+| dblclick()       | Yes       |
+| dragAndDrop()    | Yes       |
+| setInputFiles()  | Yes       |
+| tap()            | Yes       |
+| focus()          | Yes       |
+| blur()           | Yes       |
+| keyboard.press() | Yes       |
+| mouse.click()    | Yes       |
 
 ### Modern Playwright Locator Support
 
 | Locator API        | Supported |
 | ------------------ | --------- |
-| locator()          | âœ…         |
-| getByRole()        | âœ…         |
-| getByText()        | âœ…         |
-| getByLabel()       | âœ…         |
-| getByPlaceholder() | âœ…         |
-| getByTestId()      | âœ…         |
-| getByAltText()     | âœ…         |
-| getByTitle()       | âœ…         |
+| locator()          | Yes       |
+| getByRole()        | Yes       |
+| getByText()        | Yes       |
+| getByLabel()       | Yes       |
+| getByPlaceholder() | Yes       |
+| getByTestId()      | Yes       |
+| getByAltText()     | Yes       |
+| getByTitle()       | Yes       |
 
-### Reporting Features
+### Reporting Capabilities
 
 * Screenshot Evidence
-* Auto Action Capture
 * API Logging
 * Execution Summary
 * Test Case Summary
@@ -103,11 +102,42 @@ Supported actions:
 * Failed Test Analysis
 * Retry Tracking
 * Coverage Diagnostics
-* PDF Report Generation
-* HTML Dashboard Generation
-* Custom Branding
-* Enterprise Report Layout
+* Parallel Execution Support
+
+### Output Formats
+
+#### PDF Report
+
+Enterprise-style PDF report containing:
+
+* Cover Page
+* Execution Summary
+* Test Case Summary
+* Failed Test Analysis
+* Retry Summary
+* Evidence Section
+* API Activity
+* Coverage Diagnostics
+
+#### HTML Dashboard
+
+Browser-based dashboard containing:
+
+* Metadata Header
+* Summary Cards
+* Test Case Table
+* Coverage Diagnostics
+* Recent Failed Tests
+
+### Framework Features
+
+* Playwright Page Object Model Support
+* Retry-Aware Reporting
+* Worker-Safe Parallel Execution
+* Global Teardown Report Generation
+* Custom Branding Support
 * GitHub Actions Integration
+* Zero-Boilerplate Reporting
 
 ---
 

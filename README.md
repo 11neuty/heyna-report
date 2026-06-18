@@ -170,11 +170,20 @@ No manual reporting steps required.
 |-- test-results/
 |   |-- execution.json
 |   |-- metadata.json
+|-- docs/
+|   |-- auto-action-capture.md
+|   |-- installation.md
+|   |-- quick-start.md
+|   |-- sample-project.md
+|   |-- roadmap.md
 |-- playwright.config.js
 |-- heyna.config.js
 |-- heyna.global-teardown.js
 |-- regenerate-report.js
 |-- package.json
+|-- CHANGELOG.md
+|-- CONTRIBUTING.md
+|-- LICENSE
 |-- README.md
 ```
 
@@ -446,13 +455,13 @@ Example GitHub Actions:
 
 ## Documentation
 
-* INSTALLATION.md
-* QUICK_START.md
-* SAMPLE_PROJECT.md
-* AUTO_ACTION_CAPTURE.md
-* CHANGELOG.md
-* ROADMAP.md
-* CONTRIBUTING.md
+* [Installation](docs/installation.md)
+* [Quick Start](docs/quick-start.md)
+* [Sample Project](docs/sample-project.md)
+* [Auto Action Capture](docs/auto-action-capture.md)
+* [Changelog](CHANGELOG.md)
+* [Roadmap](docs/roadmap.md)
+* [Contributing](CONTRIBUTING.md)
 
 ---
 
@@ -482,7 +491,7 @@ Example GitHub Actions:
 * Plugin Ecosystem
 * AI Failure Analysis
 
-See ROADMAP.md for complete roadmap.
+See [docs/roadmap.md](docs/roadmap.md) for complete roadmap.
 
 ---
 
@@ -490,7 +499,7 @@ See ROADMAP.md for complete roadmap.
 
 Contributions are welcome.
 
-Please read CONTRIBUTING.md before submitting a pull request.
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a pull request.
 
 ---
 
@@ -498,7 +507,7 @@ Please read CONTRIBUTING.md before submitting a pull request.
 
 MIT License
 
-See LICENSE for details.
+See [LICENSE](LICENSE) for details.
 
 ---
 

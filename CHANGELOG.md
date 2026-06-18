@@ -44,6 +44,14 @@ All notable changes to HEYNA REPORT will be documented in this file.
 - Improved enterprise PDF layout
 - Improved evidence card spacing and screenshot placement
 
+## v2.2.0
+
+### Added
+
+- HTML Dashboard Foundation generating `dashboard/index.html`.
+- Metadata header, summary cards, test case table, coverage diagnostics, and recent failed tests sections.
+- Dashboard generation in global teardown and `regenerate-report.js` while preserving PDF generation.
+
 ## v2.1.0
 
 ### Added

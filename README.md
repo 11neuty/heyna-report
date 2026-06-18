@@ -1,4 +1,4 @@
-# HEYNA REPORT
+﻿# HEYNA REPORT
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/8710e36e-e140-41c8-8a8e-38fdd207a9c9" alt="HEYNA REPORT Demo">
@@ -63,34 +63,34 @@ Supported actions:
 
 | Action           | Supported |
 | ---------------- | --------- |
-| fill()           | ✅         |
-| click()          | ✅         |
-| check()          | ✅         |
-| uncheck()        | ✅         |
-| selectOption()   | ✅         |
-| press()          | ✅         |
-| hover()          | ✅         |
-| dblclick()       | ✅         |
-| dragAndDrop()    | ✅         |
-| setInputFiles()  | ✅         |
-| tap()            | ✅         |
-| focus()          | ✅         |
-| blur()           | ✅         |
-| keyboard.press() | ✅         |
-| mouse.click()    | ✅         |
+| fill()           | âœ…         |
+| click()          | âœ…         |
+| check()          | âœ…         |
+| uncheck()        | âœ…         |
+| selectOption()   | âœ…         |
+| press()          | âœ…         |
+| hover()          | âœ…         |
+| dblclick()       | âœ…         |
+| dragAndDrop()    | âœ…         |
+| setInputFiles()  | âœ…         |
+| tap()            | âœ…         |
+| focus()          | âœ…         |
+| blur()           | âœ…         |
+| keyboard.press() | âœ…         |
+| mouse.click()    | âœ…         |
 
 ### Modern Playwright Locator Support
 
 | Locator API        | Supported |
 | ------------------ | --------- |
-| locator()          | ✅         |
-| getByRole()        | ✅         |
-| getByText()        | ✅         |
-| getByLabel()       | ✅         |
-| getByPlaceholder() | ✅         |
-| getByTestId()      | ✅         |
-| getByAltText()     | ✅         |
-| getByTitle()       | ✅         |
+| locator()          | âœ…         |
+| getByRole()        | âœ…         |
+| getByText()        | âœ…         |
+| getByLabel()       | âœ…         |
+| getByPlaceholder() | âœ…         |
+| getByTestId()      | âœ…         |
+| getByAltText()     | âœ…         |
+| getByTitle()       | âœ…         |
 
 ### Reporting Features
 
@@ -104,6 +104,7 @@ Supported actions:
 * Retry Tracking
 * Coverage Diagnostics
 * PDF Report Generation
+* HTML Dashboard Generation
 * Custom Branding
 * Enterprise Report Layout
 * GitHub Actions Integration
@@ -131,9 +132,9 @@ await page.click('#login');
 Automatically generates:
 
 ```text
-✓ Fill Username
-✓ Fill Password
-✓ Click Login
+âœ“ Fill Username
+âœ“ Fill Password
+âœ“ Click Login
 ```
 
 No manual reporting steps required.
@@ -144,41 +145,37 @@ No manual reporting steps required.
 
 ```text
 .
-├── assets/
-│   └── heyna-logo.png
-│
-├── pages/
-│   ├── BasePage.js
-│   └── LoginPage.js
-│
-├── tests/
-│   ├── examples/
-│   │   └── login.spec.js
-│   │
-│   └── framework/
-│       ├── auto-capture.spec.js
-│       └── pdf-generator.spec.js
-│
-├── utils/
-│   ├── HeynaReporter.js
-│   └── HeynaPdfGenerator.js
-│
-├── reports/
-│   └── HeynaReport.pdf
-│
-├── evidence/
-│   └── <test-case>/
-│
-├── test-results/
-│   ├── execution.json
-│   └── metadata.json
-│
-├── playwright.config.js
-├── heyna.config.js
-├── heyna.global-teardown.js
-├── regenerate-report.js
-├── package.json
-└── README.md
+|-- assets/
+|   |-- heyna-logo.png
+|-- pages/
+|   |-- BasePage.js
+|   |-- LoginPage.js
+|-- tests/
+|   |-- examples/
+|   |   |-- login.spec.js
+|   |-- framework/
+|   |   |-- auto-capture.spec.js
+|   |   |-- pdf-generator.spec.js
+|-- utils/
+|   |-- HeynaReporter.js
+|   |-- HeynaPdfGenerator.js
+|   |-- HeynaHtmlDashboardGenerator.js
+|-- reports/
+|   |-- HeynaReport.pdf
+|   |-- TestExecutionReport.pdf
+|-- dashboard/
+|   |-- index.html
+|-- evidence/
+|   |-- <test-case>/
+|-- test-results/
+|   |-- execution.json
+|   |-- metadata.json
+|-- playwright.config.js
+|-- heyna.config.js
+|-- heyna.global-teardown.js
+|-- regenerate-report.js
+|-- package.json
+|-- README.md
 ```
 
 ### Core Components
@@ -187,9 +184,10 @@ No manual reporting steps required.
 | ------------------------ | ------------------------------------------------------------------------------------------ |
 | HeynaReporter.js         | Runtime reporting facade for screenshots, steps, metadata, retries, and execution tracking |
 | HeynaPdfGenerator.js     | PDFKit-based enterprise report renderer                                                    |
+| HeynaHtmlDashboardGenerator.js | Static HTML dashboard renderer for metadata, summaries, test cases, coverage, and failures |
 | heyna.config.js          | Auto-capture and reporting configuration                                                   |
 | heyna.global-teardown.js | Generates report once after all Playwright workers complete                                |
-| regenerate-report.js     | Regenerates PDF from existing execution data                                               |
+| regenerate-report.js     | Regenerates PDF and dashboard from existing execution data                                 |
 | tests/examples           | Example implementations for users                                                          |
 | tests/framework          | Internal regression tests for framework validation                                         |
 
@@ -245,6 +243,8 @@ Generated outputs:
 
 ```text
 reports/HeynaReport.pdf
+reports/TestExecutionReport.pdf
+dashboard/index.html
 
 evidence/
 

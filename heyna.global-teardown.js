@@ -1,5 +1,6 @@
 const Heyna = require('./utils/HeynaReporter');
 const { HeynaPdfGenerator } = require('./utils/HeynaPdfGenerator');
+const { HeynaHtmlDashboardGenerator } = require('./utils/HeynaHtmlDashboardGenerator');
 
 module.exports = async () => {
     Heyna.markRunningTestsAsFailed();
@@ -9,4 +10,5 @@ module.exports = async () => {
         executionEndTime: new Date().toISOString()
     });
     await HeynaPdfGenerator.generate();
+    await HeynaHtmlDashboardGenerator.generate();
 };

@@ -35,10 +35,12 @@ npm run test:clean
 
 ## 5. Open Report
 
-Generated report:
+Generated reports:
 
 ```text
 reports/HeynaReport.pdf
+reports/TestExecutionReport.pdf
+dashboard/index.html
 ```
 
 Evidence files:
@@ -54,11 +56,13 @@ test-results/execution.json
 test-results/metadata.json
 ```
 
-## Regenerate Report Only
+## Regenerate Reports Only
 
 ```bash
 node regenerate-report.js
 ```
+
+This regenerates the PDF report and HTML dashboard from existing `test-results` data.
 
 ## Minimal Test Usage
 

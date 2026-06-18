@@ -20,6 +20,7 @@ sample-project/
 |-- utils/
 |   |-- HeynaReporter.js
 |   |-- HeynaPdfGenerator.js
+|   |-- HeynaHtmlDashboardGenerator.js
 |-- package.json
 |-- playwright.config.js
 ```
@@ -142,6 +143,7 @@ After execution, HEYNA REPORT generates:
 ```text
 reports/HeynaReport.pdf
 reports/TestExecutionReport.pdf
+dashboard/index.html
 ```
 
 Evidence per test case:

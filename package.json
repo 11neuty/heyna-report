@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-  "clean": "powershell Remove-Item reports,evidence,test-results,playwright-report,allure-results -Recurse -Force -ErrorAction SilentlyContinue",
+  "clean": "powershell Remove-Item reports,evidence,test-results,dashboard,playwright-report,allure-results -Recurse -Force -ErrorAction SilentlyContinue",
 
   "test": "playwright test",
 

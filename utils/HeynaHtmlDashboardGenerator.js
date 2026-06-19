@@ -38,6 +38,18 @@ class HeynaHtmlDashboardGenerator {
   <main class="dashboard-shell">
     ${this.header(metadata)}
     ${this.summaryCards(summary)}
+    ${this.automationHealth(summary, coverage)}
+    <section class="panel charts-panel" id="charts" aria-labelledby="charts-heading">
+      <div class="charts-section-heading">
+        <h2>Execution Analytics</h2>
+        <p>Visual insights from current execution</p>
+      </div>
+      <div class="charts-grid">
+        ${this.testStatusChart(summary)}
+        ${this.coverageChart(coverage)}
+        ${this.slowestTestsChart(executionData)}
+      </div>
+    </section>
     ${this.testCaseTable(executionData)}
     ${this.coverageDiagnostics(coverage)}
     ${this.recentFailedTests(executionData)}
@@ -48,6 +60,19 @@ class HeynaHtmlDashboardGenerator {
 `;
     }
 
+    static executionId(timestamp) {
+        if (!timestamp) return 'RUN-UNKNOWN';
+        const d = new Date(timestamp);
+        if (Number.isNaN(d.getTime())) return 'RUN-UNKNOWN';
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const h = String(d.getHours()).padStart(2, '0');
+        const min = String(d.getMinutes()).padStart(2, '0');
+        const s = String(d.getSeconds()).padStart(2, '0');
+        return `RUN-${y}${m}${day}-${h}${min}${s}`;
+    }
+
     static header(metadata) {
 const items = [
             ["Project", metadata.project],
@@ -55,6 +80,7 @@ const items = [
             ["Environment", metadata.environment],
             ["Browser", metadata.browser],
             ["Run Status", metadata.runStatus],
+            ["Execution ID", this.executionId(metadata.executionStartTime)],
             ["Duration", this.formatDuration(metadata.executionStartTime && metadata.executionEndTime ? (new Date(metadata.executionEndTime) - new Date(metadata.executionStartTime)) : 0)]
         ];
 
@@ -90,11 +116,55 @@ const cards = [
 </section>`;
     }
 
+    static automationHealth(summary, coverage) {
+        const failed = Number(summary.failed) || 0;
+        const passed = Number(summary.passed) || 0;
+        const passRate = parseFloat(summary.passRate) || 0;
+        const coverageRate = coverage ? parseFloat(coverage.captureRate) : 0;
+
+        let cls, icon, heading, reasons;
+
+        if (failed > passed) {
+            cls = 'health-critical';
+            icon = '\u2716';
+            heading = 'Critical Issues Detected';
+            reasons = ['Multiple failures require investigation.'];
+        } else if (failed === 0 && passRate >= 95 && coverageRate >= 95) {
+            cls = 'health-healthy';
+            icon = '\u2713';
+            heading = 'Healthy Run';
+            reasons = ['All tests passed.', 'Auto-capture coverage is excellent.'];
+        } else {
+            cls = 'health-attention';
+            icon = '\u26A0';
+            heading = 'Attention Required';
+            reasons = [];
+            if (failed > 0) reasons.push(`${failed} failed test${failed !== 1 ? 's' : ''} detected.`);
+            if (passRate < 95) reasons.push('Pass rate below target.');
+            if (coverageRate < 95) reasons.push('Coverage below target.');
+        }
+
+        return `<section class="panel health-panel ${cls}" id="health" aria-labelledby="health-heading">
+  <div class="health-inner">
+    <span class="health-icon">${icon}</span>
+    <div class="health-body">
+      <h2>Automation Health</h2>
+      <strong>${this.escape(heading)}</strong>
+      <ul>${reasons.map(r => `<li>${this.escape(r)}</li>`).join('')}</ul>
+    </div>
+  </div>
+</section>`;
+    }
+
     static testCaseTable(executionData) {
         const rows = executionData.map(testCase => {
             const status = this.normalizeStatus(testCase.status);
+            const testId = this.escape(testCase.testCase).replace(/\s+/g, '-');
+            const nameCell = status === 'FAILED'
+                ? `<a href="#${testId}-failure" class="test-link">${this.escape(testCase.testCase)}</a>`
+                : this.escape(testCase.testCase);
             return `<tr>
-      <td>${this.escape(testCase.testCase)}</td>
+      <td>${nameCell}</td>
       <td>${this.escape(testCase.feature || '-')}</td>
       <td><span class="status ${this.statusClass(status)}">${this.escape(status)}</span></td>
       <td>${this.escape(this.formatDuration(testCase.duration))}</td>
@@ -156,7 +226,7 @@ const cards = [
     let html = `<article class="failed-card" id="${testId}-failure"><strong>${this.escape(testCase.testCase)}</strong><p>${this.escape(testCase.errorMessage || 'No error message captured.')}</p>`;
     if (testCase.failureScreenshot) {
       const screenshotPath = testCase.failureScreenshot.replace(/\\/g, "/");
-    html += `<div class="failure-screenshot"><img src="${this.escape("../" + screenshotPath)}" alt="${this.escape(testCase.testCase)} failure" loading="lazy"></div>`;
+    html += `<div class="failure-screenshot"><img src="${this.escape("../" + screenshotPath)}" alt="${this.escape(testCase.testCase)} failure" loading="lazy"><a href="${this.escape("../" + screenshotPath)}" target="_blank" class="screenshot-link">Open Full Size</a></div>`;
     } else {
       html += `<p class="empty-state failure-missing">No failure screenshot available.</p>`;
     }
@@ -184,8 +254,187 @@ const cards = [
         };
     }
 
+
+    static generateDonutChart(data, options = {}) {
+        const { size = 200, innerRadius = 0.6, centerText = '', centerSubtext = '' } = options;
+        const radius = size / 2;
+        const strokeWidth = radius * (1 - innerRadius);
+        const innerRad = radius - strokeWidth;
+        
+        const total = data.reduce((sum, item) => sum + Number(item.value || 0), 0);
+        if (total === 0) {
+            return `<svg viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Empty donut chart">
+                <circle cx="${radius}" cy="${radius}" r="${innerRad}" fill="none" stroke="#E5E7EB" stroke-width="${strokeWidth}"/>
+                <text x="${radius}" y="${radius}" text-anchor="middle" dominant-baseline="middle" font-size="14" fill="#6B7280">No data</text>
+            </svg>`;
+        }
+        
+        let currentAngle = -90;
+        const slices = data.map(item => {
+            const value = Number(item.value || 0);
+            const percentage = (value / total) * 100;
+            const angle = (value / total) * 360;
+            const startAngle = currentAngle;
+            const endAngle = currentAngle + angle;
+            
+            const x1 = radius + radius * Math.cos(startAngle * Math.PI / 180);
+            const y1 = radius + radius * Math.sin(startAngle * Math.PI / 180);
+            const x2 = radius + radius * Math.cos(endAngle * Math.PI / 180);
+            const y2 = radius + radius * Math.sin(endAngle * Math.PI / 180);
+            
+            const largeArc = angle > 180 ? 1 : 0;
+            const pathData = `M ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2}`;
+            
+            currentAngle = endAngle;
+            
+            return `<path d="${pathData}" fill="none" stroke="${item.color}" stroke-width="${strokeWidth}" class="chart-slice" aria-label="${this.escape(item.label)}: ${value} (${percentage.toFixed(1)}%)"/>`;
+        }).join('\n        ');
+        
+        const centerY = centerSubtext ? radius - 8 : radius;
+        const centerTextMarkup = centerText ? `<text x="${radius}" y="${centerY}" text-anchor="middle" dominant-baseline="middle" font-size="28" font-weight="700" fill="#1F2937">${this.escape(centerText)}</text>` : '';
+        const subtextMarkup = centerSubtext ? `<text x="${radius}" y="${radius + 16}" text-anchor="middle" dominant-baseline="middle" font-size="11" fill="#6B7280">${this.escape(centerSubtext)}</text>` : '';
+        
+        return `<svg viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Donut chart visualization">
+        ${slices}
+        ${centerTextMarkup}
+        ${subtextMarkup}
+    </svg>`;
+    }
+
+    static generateHorizontalBarChart(data, options = {}) {
+        const { width = 400, height = 100, maxBars = 5, maxLabelLen = 26, valueFormatter = (v) => v } = options;
+        const sortedData = [...data].sort((a, b) => Number(b.value || 0) - Number(a.value || 0)).slice(0, maxBars);
+        
+        if (sortedData.length === 0) {
+            return `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Empty bar chart">
+                <text x="${width/2}" y="${height/2}" text-anchor="middle" font-size="14" fill="#6B7280">No data available</text>
+            </svg>`;
+        }
+        
+        const maxValue = Math.max(...sortedData.map(d => Number(d.value || 0)), 1);
+        const barHeight = 26;
+        const barSpacing = 18;
+        const startY = 10;
+        const labelX = 6;
+        const labelWidth = 170;
+        const durationX = width - 12;
+        const barStartX = labelX + labelWidth + 10;
+        const barEndX = durationX - 10;
+        const chartWidth = Math.max(barEndX - barStartX, 40);
+        
+        const bars = sortedData.map((item, i) => {
+            const value = Number(item.value || 0);
+            const barWidth = (value / maxValue) * chartWidth;
+            const y = startY + i * (barHeight + barSpacing);
+            const barColor = item.color || '#2563EB';
+            const label = item.label.length > maxLabelLen ? item.label.slice(0, maxLabelLen - 1) + '\u2026' : item.label;
+            
+            return `<g class="chart-bar-group">
+        <title>${this.escape(item.label)}</title>
+        <text x="${labelX}" y="${y + barHeight/2 + 1}" dominant-baseline="middle" font-size="12" fill="#1F2937">${this.escape(label)}</text>
+        <rect x="${barStartX}" y="${y}" width="${Math.max(barWidth, 3)}" height="${barHeight}" fill="${barColor}" rx="3" class="bar-rect"/>
+        <text x="${durationX}" y="${y + barHeight/2 + 1}" dominant-baseline="middle" font-size="11" font-weight="600" fill="#1F2937" text-anchor="end">${this.escape(valueFormatter(value))}</text>
+    </g>`;
+        }).join('\n    ');
+        
+        const totalHeight = Math.max(sortedData.length * (barHeight + barSpacing) + 6, height);
+        
+        return `<svg viewBox="0 0 ${width} ${totalHeight}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Horizontal bar chart">
+    ${bars}
+</svg>`;
+    }
+
+    static testStatusChart(summary) {
+        if (!summary || summary.total === 0) return '';
+        
+        const chartData = [
+            { label: 'Passed', value: summary.passed, color: '#16A05D' },
+            { label: 'Failed', value: summary.failed, color: '#D32F2F' },
+            { label: 'Skipped', value: summary.skipped, color: '#F59E0B' }
+        ].filter(item => item.value > 0);
+        
+        const chart = this.generateDonutChart(chartData, {
+            size: 200,
+            centerText: summary.total,
+            centerSubtext: 'Total Tests'
+        });
+        
+        return `<div class="chart-container">
+  <h3 class="chart-title">Test Status Distribution</h3>
+  <p class="chart-desc">Test execution outcome breakdown</p>
+  <div class="chart-wrapper">${chart}</div>
+  <div class="chart-legend">
+    ${chartData.map(item => `<div class="legend-item"><span class="legend-color" style="background:${item.color}"></span><span class="legend-label">${this.escape(item.label)}: ${item.value}</span></div>`).join('\n    ')}
+  </div>
+</div>`;
+    }
+    static coverageChart(coverage) {
+        const actions = coverage && coverage.byAction ? Object.entries(coverage.byAction) : [];
+        if (actions.length === 0) return '';
+
+        const maxCaptured = Math.max(...actions.map(([, s]) => Number(s.captured || 0)), 1);
+        const palette = ['#2563EB', '#3B82F6', '#60A5FA', '#93C5FD', '#BFDBFE'];
+        const chartData = actions
+            .map(([action, stats]) => ({
+                label: action,
+                value: Number(stats.captured || 0),
+                detected: Number(stats.detected || 0)
+            }))
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 5)
+            .map((item, i) => ({
+                ...item,
+                color: palette[i % palette.length]
+            }));
+
+        if (chartData.length === 0) return '';
+
+        const chart = this.generateHorizontalBarChart(chartData, {
+            width: 400,
+            maxBars: 5,
+            maxLabelLen: 14,
+            valueFormatter: (v) => String(v)
+        });
+
+        return `<div class="chart-container">
+  <h3 class="chart-title">Action Coverage Distribution</h3>
+  <p class="chart-desc">Top auto-captured actions</p>
+  <div class="chart-wrapper chart-wrapper-wide">${chart}</div>
+</div>`;
+    }
+
+    static slowestTestsChart(executionData) {
+        if (!executionData || executionData.length === 0) return '';
+
+        const chartData = executionData
+            .filter(tc => Number(tc.duration) > 0)
+            .map(tc => ({
+                label: tc.testCase,
+                value: Number(tc.duration || 0),
+                color: '#2563EB'
+            }))
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 5);
+
+        if (chartData.length === 0) return '';
+        if (chartData.length > 0) chartData[0].color = '#D32F2F';
+
+        const chart = this.generateHorizontalBarChart(chartData, {
+            width: 400,
+            maxBars: 5,
+            maxLabelLen: 22,
+            valueFormatter: (v) => this.formatDuration(v)
+        });
+
+        return `<div class="chart-container">
+  <h3 class="chart-title">Top Slowest Tests</h3>
+  <p class="chart-desc">Longest running test cases</p>
+  <div class="chart-wrapper chart-wrapper-wide">${chart}</div>
+</div>`;
+    }
+
     static styles() {
-        return `:root{--navy:#123A63;--navy-dark:#0B2A47;--green:#16A05D;--red:#D32F2F;--orange:#F59E0B;--blue:#2563EB;--black:#1F2937;--gray:#6B7280;--light:#F8FAFC;--border:#E5E7EB;--white:#FFFFFF}*{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#eef5ff 0%,#f8fafc 40%,#fff 100%);color:var(--black);font-family:Inter,Segoe UI,Arial,sans-serif}.dashboard-shell{width:min(1180px,calc(100% - 32px));margin:0 auto;padding:32px 0}.dashboard-header{display:grid;grid-template-columns:minmax(260px,1fr) minmax(320px,1.4fr);gap:24px;align-items:stretch;background:var(--navy);color:var(--white);border-radius:22px;padding:24px;box-shadow:0 20px 45px rgba(18,58,99,.18)}h1{font-size:clamp(2rem,5vw,4rem);line-height:1;margin:8px 0}.tagline{color:#dbeafe;margin:0}.eyebrow{margin:0 0 6px;text-transform:uppercase;letter-spacing:.12em;font-size:.76rem;font-weight:700;color:#93c5fd}.metadata-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0}.metadata-item{background:rgba(255,255,255,.11);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:12px}.metadata-item dt{font-size:.72rem;color:#bfdbfe;text-transform:uppercase;letter-spacing:.08em}.metadata-item dd{margin:5px 0 0;font-weight:700;overflow-wrap:anywhere}.panel{background:var(--white);border:1px solid var(--border);border-radius:20px;margin-top:18px;padding:24px;box-shadow:0 12px 30px rgba(15,23,42,.06)}.section-heading{display:flex;justify-content:space-between;gap:16px;align-items:end;margin-bottom:16px}.section-heading h2{margin:0;color:var(--navy);font-size:1.35rem}.summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.summary-card{border:1px solid var(--border);border-left:5px solid var(--gray);border-radius:16px;padding:16px;background:var(--light)}.summary-card span{display:block;color:var(--black);font-weight:700;font-size:.75rem;text-transform:uppercase;letter-spacing:.06em}.summary-card strong{display:block;font-size:1.7rem;margin-top:8px;color:var(--black)}.tone-blue{border-left-color:var(--blue)}.tone-green{border-left-color:var(--green)}.tone-red{border-left-color:var(--red)}.tone-orange{border-left-color:var(--orange)}.tone-navy{border-left-color:var(--navy)}.tone-gray{border-left-color:var(--gray)}.table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:16px}table{width:100%;border-collapse:collapse;min-width:760px;background:var(--white)}th,td{text-align:left;padding:13px 14px;border-bottom:1px solid var(--border);vertical-align:top}th{background:var(--navy);color:var(--white);font-size:.78rem;text-transform:uppercase;letter-spacing:.06em}tbody tr:nth-child(even){background:var(--light)}tbody tr:last-child td{border-bottom:0}.status{display:inline-flex;align-items:center;border-radius:999px;padding:4px 10px;font-size:.76rem;font-weight:800}.status-passed{background:#dcfce7;color:#166534}.status-failed{background:#fee2e2;color:#991b1b}.status-skipped{background:#ffedd5;color:#9a3412}.status-running{background:#dbeafe;color:#1e40af}.status-unknown{background:#e5e7eb;color:#374151}.diagnostics-grid{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:18px}.empty-state{margin:0;padding:18px;border:1px dashed var(--border);border-radius:14px;background:var(--light);color:var(--gray)}.empty-state.success{border-color:#bbf7d0;background:#f0fdf4;color:#166534}.failed-list{display:grid;gap:12px}.failed-card{border:1px solid #fecaca;background:#fff7f7;border-radius:14px;padding:14px}.failed-card strong{color:var(--red)}.failed-card p{margin:8px 0 0;color:var(--gray)}.dashboard-footer{text-align:center;color:var(--gray);font-size:.78rem;margin:26px 0 8px}@media (max-width:900px){.dashboard-header{grid-template-columns:1fr}.metadata-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.diagnostics-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media (max-width:560px){.dashboard-shell{width:min(100% - 20px,1180px);padding:16px 0}.dashboard-header,.panel{padding:18px;border-radius:16px}.metadata-grid,.summary-grid,.diagnostics-grid{grid-template-columns:1fr}.section-heading{display:block}}`;
+        return `:root{--navy:#123A63;--navy-dark:#0B2A47;--green:#16A05D;--red:#D32F2F;--orange:#F59E0B;--blue:#2563EB;--black:#1F2937;--gray:#6B7280;--light:#F8FAFC;--border:#E5E7EB;--white:#FFFFFF}*{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#eef5ff 0%,#f8fafc 40%,#fff 100%);color:var(--black);font-family:Inter,Segoe UI,Arial,sans-serif}.dashboard-shell{width:min(1180px,calc(100% - 32px));margin:0 auto;padding:32px 0}.dashboard-header{display:grid;grid-template-columns:minmax(260px,1fr) minmax(320px,1.4fr);gap:24px;align-items:stretch;background:var(--navy);color:var(--white);border-radius:22px;padding:24px;box-shadow:0 20px 45px rgba(18,58,99,.18)}h1{font-size:clamp(2rem,5vw,4rem);line-height:1;margin:8px 0}.tagline{color:#dbeafe;margin:0}.eyebrow{margin:0 0 6px;text-transform:uppercase;letter-spacing:.12em;font-size:.76rem;font-weight:700;color:#93c5fd}.metadata-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0}.metadata-item{background:rgba(255,255,255,.11);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:12px}.metadata-item dt{font-size:.72rem;color:#bfdbfe;text-transform:uppercase;letter-spacing:.08em}.metadata-item dd{margin:5px 0 0;font-weight:700;overflow-wrap:anywhere}.panel{background:var(--white);border:1px solid var(--border);border-radius:20px;margin-top:18px;padding:24px;box-shadow:0 12px 30px rgba(15,23,42,.06)}.section-heading{display:flex;justify-content:space-between;gap:16px;align-items:end;margin-bottom:16px}.section-heading h2{margin:0;color:var(--navy);font-size:1.35rem}.summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.summary-card{border:1px solid var(--border);border-left:5px solid var(--gray);border-radius:16px;padding:16px;background:var(--light)}.summary-card span{display:block;color:var(--black);font-weight:700;font-size:.75rem;text-transform:uppercase;letter-spacing:.06em}.summary-card strong{display:block;font-size:1.7rem;margin-top:8px;color:var(--black)}.health-panel{border-left:5px solid var(--gray)}.health-panel.health-healthy{border-left-color:var(--green)}.health-panel.health-attention{border-left-color:var(--orange)}.health-panel.health-critical{border-left-color:var(--red)}.health-inner{display:flex;gap:14px;align-items:flex-start}.health-icon{font-size:1.6rem;line-height:1;flex-shrink:0;margin-top:2px}.health-healthy .health-icon{color:var(--green)}.health-attention .health-icon{color:var(--orange)}.health-critical .health-icon{color:var(--red)}.health-body h2{margin:0;font-size:.82rem;text-transform:uppercase;letter-spacing:.06em;color:var(--gray)}.health-body strong{display:block;font-size:1.1rem;margin:1px 0 6px}.health-healthy .health-body strong{color:var(--green)}.health-attention .health-body strong{color:var(--orange)}.health-critical .health-body strong{color:var(--red)}.health-body ul{margin:0;padding:0;list-style:none}.health-body li{font-size:.88rem;color:var(--black);padding:1px 0}.health-body li::before{content:'\u2022';margin-right:6px;color:var(--gray)}.tone-blue{border-left-color:var(--blue)}.tone-green{border-left-color:var(--green)}.tone-red{border-left-color:var(--red)}.tone-orange{border-left-color:var(--orange)}.tone-navy{border-left-color:var(--navy)}.tone-gray{border-left-color:var(--gray)}.charts-panel{padding:20px 24px}.charts-section-heading{margin-bottom:18px}.charts-section-heading h2{margin:0;color:var(--navy);font-size:1.1rem;font-weight:700}.charts-section-heading p{margin:2px 0 0;color:var(--gray);font-size:.82rem}.charts-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;align-items:start}.chart-container{text-align:center}.chart-title{font-size:.82rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--navy);margin:0;text-align:center}.chart-desc{font-size:.75rem;color:var(--gray);margin:2px 0 10px;text-align:center}.chart-wrapper{display:flex;justify-content:center;margin:0 auto;max-width:220px}.chart-wrapper-wide{max-width:none;width:100%}.chart-wrapper svg,.chart-wrapper-wide svg{width:100%;height:auto;display:block}.chart-legend{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 14px;margin-top:10px}.legend-item{display:inline-flex;align-items:center;gap:5px;font-size:.78rem;color:var(--black)}.legend-color{display:inline-block;width:11px;height:11px;border-radius:3px;flex-shrink:0}.legend-label{white-space:nowrap}.chart-slice{transition:opacity .15s}.chart-slice:hover,.bar-rect:hover{opacity:.8}.table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:16px}table{width:100%;border-collapse:collapse;min-width:760px;background:var(--white)}th,td{text-align:left;padding:13px 14px;border-bottom:1px solid var(--border);vertical-align:top}th{background:var(--navy);color:var(--white);font-size:.78rem;text-transform:uppercase;letter-spacing:.06em}tbody tr:nth-child(even){background:var(--light)}tbody tr:last-child td{border-bottom:0}.status{display:inline-flex;align-items:center;border-radius:999px;padding:4px 10px;font-size:.76rem;font-weight:800}.status-passed{background:#dcfce7;color:#166534}.status-failed{background:#fee2e2;color:#991b1b}.test-link{color:var(--red);text-decoration:none;font-weight:600}.test-link:hover{text-decoration:underline}.screenshot-link{display:inline-block;margin-top:8px;font-size:.82rem;color:var(--blue);text-decoration:none;font-weight:600}.screenshot-link:hover{text-decoration:underline}.status-skipped{background:#ffedd5;color:#9a3412}.status-running{background:#dbeafe;color:#1e40af}.status-unknown{background:#e5e7eb;color:#374151}.diagnostics-grid{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:18px}.empty-state{margin:0;padding:18px;border:1px dashed var(--border);border-radius:14px;background:var(--light);color:var(--gray)}.empty-state.success{border-color:#bbf7d0;background:#f0fdf4;color:#166534}.failed-list{display:grid;gap:12px}.failed-card{border:1px solid #fecaca;background:#fff7f7;border-radius:14px;padding:14px}.failed-card strong{color:var(--red)}.failed-card p{margin:8px 0 0;color:var(--gray)}.dashboard-footer{text-align:center;color:var(--gray);font-size:.78rem;margin:26px 0 8px}@media (max-width:900px){.dashboard-header{grid-template-columns:1fr}.charts-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.metadata-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.diagnostics-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media (max-width:560px){.dashboard-shell{width:min(100% - 20px,1180px);padding:16px 0}.dashboard-header,.panel{padding:18px;border-radius:16px}.charts-grid,.metadata-grid,.summary-grid,.diagnostics-grid{grid-template-columns:1fr}.section-heading{display:block}}`;
     }
 
     static escape(value) {

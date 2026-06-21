@@ -55,6 +55,11 @@ All notable changes to HEYNA REPORT will be documented in this file.
 - Failure category display in PDF Failed Test Analysis
 - Failure category badge in HTML Dashboard failure cards
 - Unit tests for all classification categories
+- Failure Grouping & Aggregation in `utils/FailureGrouping.js`
+- `computeFailureSignature()` normalization in `utils/FailureClassifier.js`
+- Failure Group Summary section in PDF report
+- Failure Group Summary section in HTML dashboard
+- Unit tests for signature normalization and failure grouping
 
 ### Supported Categories
 
@@ -65,6 +70,10 @@ All notable changes to HEYNA REPORT will be documented in this file.
 - `API_FAILURE` - API request/response failures
 - `CONFIGURATION_FAILURE` - Browser/config/environment setup failures
 - `UNKNOWN_FAILURE` - Unrecognized failure fallback
+
+### Failure Grouping
+
+Groups similar failures by `failureCategory` + normalized signature. Groups are sorted by frequency descending. Each group shows occurrence count and affected test cases. Displayed in both PDF and HTML reports as a Grouped Failure Summary section.
 
 ## v2.2.0
 

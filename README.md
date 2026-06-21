@@ -101,6 +101,7 @@ Supported Actions:
 * Step Summary
 * Failed Test Analysis
 * Failure Classification Engine
+* Failure Grouping & Aggregation
 * Retry Tracking
 * Coverage Diagnostics
 * Parallel Execution Support
@@ -192,6 +193,7 @@ No manual reporting steps required.
 |   |-- HeynaPdfGenerator.js
 |   |-- HeynaHtmlDashboardGenerator.js
 |   |-- FailureClassifier.js
+|   |-- FailureGrouping.js
 |-- reports/
 |   |-- HeynaReport.pdf
 |   |-- TestExecutionReport.pdf
@@ -380,6 +382,23 @@ module.exports = {
 | important-actions | Capture important user actions |
 
 ---
+
+## Failure Grouping & Aggregation
+
+Groups similar failures by category and normalized error signature to reduce report noise.
+
+### How It Works
+
+1. Failed test cases are classified by the Failure Classification Engine
+2. Error messages are normalized into stable signatures (e.g. `EXPECT_TO_HAVE_URL`, `TIMEOUT`, `LOCATOR_NOT_FOUND`)
+3. Failures with the same `failureCategory` + `signature` are grouped together
+4. Groups are sorted by occurrence count (most frequent first)
+5. Each group displays occurrence count and affected test case names
+
+### Group Display
+
+- **PDF Report**: Grouped Failure Summary section with table (Category, Signature, Occurrences, Affected Tests)
+- **HTML Dashboard**: Failure Group Summary panel with table and category badges
 
 ## Failure Classification Engine
 

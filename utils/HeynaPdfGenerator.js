@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const PDFDocument = require('pdfkit');
 const Heyna = require('./HeynaReporter');
+const { groupFailures } = require('./FailureGrouping');
 
 const BRAND = {
     name: 'HEYNA REPORT',
@@ -58,12 +59,14 @@ class HeynaPdfGenerator {
                 const summary = Heyna.getSummary();
                 const executionData = Heyna.getExecutionData();
                 const failedTests = executionData.filter(tc => this.normalizeStatus(tc.status) === 'FAILED');
+                const failureGroups = groupFailures(executionData);
 
                 this.cover(doc, summary, options);
                 doc.addPage();
                 this.executionSummary(doc, summary);
                 this.testCaseSummary(doc, executionData);
                 this.failedTestAnalysis(doc, failedTests);
+                this.failureGroupSummary(doc, failureGroups);
 
                 executionData.forEach((testCase, index) => {
                     doc.addPage();
@@ -204,6 +207,27 @@ class HeynaPdfGenerator {
 
             doc.y = top + height + 16;
         });
+    }
+
+    static failureGroupSummary(doc, failureGroups) {
+        if (!failureGroups || !failureGroups.length) return;
+
+        doc.addPage();
+        this.sectionTitle(doc, 'FAILURE GROUP SUMMARY');
+
+        this.table(doc, [
+            { label: 'Category', width: 130 },
+            { label: 'Failure Signature', width: 210 },
+            { label: 'Occurrences', width: 90 },
+            { label: 'Affected Tests', width: 120 }
+        ], failureGroups.map(g => [
+            g.category,
+            g.signature,
+            String(g.occurrences),
+            g.testCases.join(', ')
+        ]), { statusColumn: 0 });
+
+        doc.moveDown(1.4);
     }
 
     static testCaseDetail(doc, tc, number) {

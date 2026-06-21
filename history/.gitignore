@@ -1,0 +1,4 @@
+# Ignore execution data files (generated at runtime)
+executions/*.json
+# Keep the directory structure
+!executions/.gitkeep

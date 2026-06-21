@@ -11,9 +11,10 @@ sample-project/
 |-- pages/
 |   |-- BasePage.js
 |   |-- LoginPage.js
-|-- tests/
-|   |-- examples/
+|-- examples/
+|   |-- playwright/
 |   |   |-- login.spec.js
+|-- tests/
 |   |-- framework/
 |   |   |-- auto-capture.spec.js
 |   |   |-- pdf-generator.spec.js
@@ -65,7 +66,7 @@ module.exports = { LoginPage };
 ## Sample Test
 
 ```js
-// tests/examples/login.spec.js
+// examples/playwright/login.spec.js
 const { test } = require('@playwright/test');
 const { LoginPage } = require('../../pages/LoginPage');
 const Heyna = require('../../utils/HeynaReporter');

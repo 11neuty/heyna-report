@@ -1,0 +1,20 @@
+[
+  {
+    "method": "GET",
+    "status": 200,
+    "duration": 2789,
+    "url": "https://www.saucedemo.com/"
+  },
+  {
+    "method": "POST",
+    "status": 401,
+    "duration": 1079,
+    "url": "https://events.backtrace.io/api/unique-events/submit?universe=UNIVERSE&token=TOKEN"
+  },
+  {
+    "method": "POST",
+    "status": 401,
+    "duration": 1575,
+    "url": "https://events.backtrace.io/api/summed-events/submit?universe=UNIVERSE&token=TOKEN"
+  }
+]

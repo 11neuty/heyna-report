@@ -66,7 +66,7 @@ This regenerates the PDF report and HTML dashboard from existing `test-results` 
 
 ## Minimal Test Usage
 
-Place example tests under `tests/examples/` and framework regression tests under `tests/framework/`.
+Place example tests under `examples/playwright/` and framework regression tests under `tests/framework/`.
 
 ```js
 const { test } = require('@playwright/test');

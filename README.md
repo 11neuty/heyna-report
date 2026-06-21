@@ -446,6 +446,42 @@ If no category exceeds 40%, a combined recommendation is displayed.
 - **PDF Report**: INTELLIGENT FAILURE SUMMARY section (after Execution Summary)
 - **HTML Dashboard**: Intelligent Failure Summary panel (after Automation Health)
 
+## Root Cause Clustering Analysis
+
+Identifies failures that likely originate from the same underlying cause by merging Failure Groups that share the same feature area and have compatible failure patterns.
+
+### Root Cause Taxonomy (6 categories)
+
+| Category | Description |
+| -------- | ----------- |
+| AUTH_FLOW_REGRESSION | Authentication flow failures |
+| UI_REGRESSION | UI/element interaction failures |
+| API_REGRESSION | API endpoint contract failures |
+| TIMEOUT_REGRESSION | Timeout-related failures |
+| CONFIGURATION_REGRESSION | Browser/environment configuration failures |
+| UNKNOWN_ROOT_CAUSE | Unrecognized fallback |
+
+### Confidence Scoring
+
+| Signal | Points | Trigger |
+| ------ | ------ | ------- |
+| Same Signature | 40 | Exact failure signature match across groups |
+| Same Feature | 20 | Shared feature area |
+| Same Stack Origin | 20 | Shared file in stack trace (e.g., `LoginPage.js:35`) |
+| Same Error Type | 10 | Same Playwright error type |
+| Cross-Category | 10 | Different failure categories in same feature |
+
+- **HIGH**: ≥80 points &mdash; Strong evidence of a single root cause
+- **MEDIUM**: ≥50 points &mdash; Moderate evidence, warrants investigation
+- **LOW**: <50 points &mdash; Weak evidence, may be coincidental
+
+Auth-keyword override: If any error message in the cluster contains auth-related keywords (login, authentication, 401, 403, token, etc.), the root cause is classified as `AUTH_FLOW_REGRESSION` regardless of failure category.
+
+### Display
+
+- **PDF Report**: Root Cause Analysis section (after Intelligent Failure Summary) with styled cards, confidence badges, evidence lists, and recommendation callouts
+- **HTML Dashboard**: Root Cause Analysis panel (after Intelligent Failure Summary) with confidence badges, evidence lists, and recommendation blocks
+
 ## Failure Classification Engine
 
 Automatically categorizes test failures into predefined categories.

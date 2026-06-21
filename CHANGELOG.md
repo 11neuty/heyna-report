@@ -64,6 +64,30 @@ All notable changes to HEYNA REPORT will be documented in this file.
 - INTELLIGENT FAILURE SUMMARY section in PDF report
 - Intelligent Failure Summary panel in HTML dashboard
 - Unit tests for health status, distribution, recurring failures, impacted suites, and recommendations
+- Root Cause Clustering via `utils/RootCauseClusterer.js`
+- ROOT CAUSE ANALYSIS section in PDF report
+- Root Cause Analysis panel in HTML dashboard
+- Unit tests for clustering, confidence scoring, cross-category merge, and edge cases
+
+### Root Cause Taxonomy (6 categories)
+
+- `AUTH_FLOW_REGRESSION` - Authentication flow failures
+- `UI_REGRESSION` - UI/element interaction failures
+- `API_REGRESSION` - API endpoint contract failures
+- `TIMEOUT_REGRESSION` - Timeout-related failures
+- `CONFIGURATION_REGRESSION` - Browser/environment configuration failures
+- `UNKNOWN_ROOT_CAUSE` - Unrecognized fallback
+
+### Root Cause Clustering
+
+Groups failures into root-cause clusters by merging `FailureGroup` objects that share the same feature area and have compatible failure patterns (shared stack origin, shared error type, or cross-category merge). Each cluster includes:
+
+- **Root Cause Classification**: One of 6 taxonomy labels, with auth-keyword override
+- **Confidence Score**: 0-100 (HIGH ≥80, MEDIUM ≥50, LOW <50) from 5 additive signals
+- **Evidence**: List of signatures, features, and error types backing the classification
+- **Recommendation**: Actionable guidance specific to the root cause type
+
+Displayed in both PDF and HTML reports as a Root Cause Analysis section.
 
 ### Supported Categories
 

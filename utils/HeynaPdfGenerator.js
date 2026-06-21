@@ -4,6 +4,7 @@ const PDFDocument = require('pdfkit');
 const Heyna = require('./HeynaReporter');
 const { groupFailures } = require('./FailureGrouping');
 const { generateInsights } = require('./FailureSummaryEngine');
+const { clusterRootCauses } = require('./RootCauseClusterer');
 
 const BRAND = {
     name: 'HEYNA REPORT',
@@ -67,6 +68,8 @@ class HeynaPdfGenerator {
                 this.executionSummary(doc, summary);
                 const insights = generateInsights(executionData, summary, failureGroups);
                 this.intelligentFailureSummary(doc, insights);
+                const rootCauses = clusterRootCauses(executionData, failureGroups);
+                this.rootCauseAnalysis(doc, rootCauses);
                 this.testCaseSummary(doc, executionData);
                 this.failedTestAnalysis(doc, failedTests);
                 this.failureGroupSummary(doc, failureGroups);
@@ -302,6 +305,77 @@ class HeynaPdfGenerator {
             .text(insights.recommendation.text, PAGE.margin + 12, recTop + 30,
                 { width: this.contentWidth(doc) - 24 });
         doc.y = recTop + 64;
+
+        doc.moveDown(1.4);
+    }
+
+    static rootCauseAnalysis(doc, rootCausesData) {
+        this.sectionTitle(doc, 'ROOT CAUSE ANALYSIS');
+
+        if (!rootCausesData || !rootCausesData.rootCauses || !rootCausesData.rootCauses.length) {
+            this.noteBox(doc, 'No root cause clusters identified. All failures appear independent.', COLORS.gray);
+            return;
+        }
+
+        const { rootCauses, totalFailuresClustered, totalClusters, coverage } = rootCausesData;
+        doc.font('Helvetica').fontSize(9).fillColor(COLORS.gray)
+            .text(`${totalFailuresClustered} / ${totalFailuresClustered + (rootCausesData.unclusteredCount || 0)} failures clustered in ${totalClusters} root cause${totalClusters !== 1 ? 's' : ''} (${coverage}% coverage)`, PAGE.margin, doc.y);
+        doc.moveDown(0.8);
+
+        rootCauses.forEach((rc, index) => {
+            this.ensureSpace(doc, 190);
+            const top = doc.y;
+            const confColor = rc.confidenceLabel === 'HIGH' ? COLORS.green
+                : rc.confidenceLabel === 'MEDIUM' ? COLORS.orange
+                : COLORS.red;
+
+            doc.roundedRect(PAGE.margin, top, this.contentWidth(doc), 175, 6)
+                .lineWidth(1)
+                .stroke(COLORS.midGray);
+            doc.rect(PAGE.margin, top, this.contentWidth(doc), 32)
+                .fillAndStroke(COLORS.lightGray, COLORS.midGray);
+            doc.font('Helvetica-Bold').fontSize(11).fillColor(COLORS.navy)
+                .text(`${rc.id}  ${rc.label}`, PAGE.margin + 14, top + 10, { width: this.contentWidth(doc) - 28 });
+
+            let y = top + 44;
+
+            doc.font('Helvetica-Bold').fontSize(8).fillColor(COLORS.gray)
+                .text('Confidence:', PAGE.margin + 14, y, { width: 90 });
+            doc.font('Helvetica-Bold').fontSize(8).fillColor(confColor)
+                .text(`${rc.confidenceLabel} (${rc.confidence})`, PAGE.margin + 104, y, { width: 150 });
+            y += 14;
+
+            doc.font('Helvetica-Bold').fontSize(8).fillColor(COLORS.gray)
+                .text('Category:', PAGE.margin + 14, y, { width: 90 });
+            doc.font('Helvetica').fontSize(8).fillColor(COLORS.red)
+                .text(rc.category, PAGE.margin + 104, y, { width: 150 });
+            y += 14;
+
+            doc.font('Helvetica-Bold').fontSize(8).fillColor(COLORS.gray)
+                .text('Occurrences:', PAGE.margin + 14, y, { width: 90 });
+            doc.font('Helvetica').fontSize(8).fillColor(COLORS.black)
+                .text(`${rc.occurrences} (${rc.percentage}%)`, PAGE.margin + 104, y, { width: 150 });
+            y += 14;
+
+            doc.font('Helvetica-Bold').fontSize(8).fillColor(COLORS.gray)
+                .text('Evidence:', PAGE.margin + 14, y, { width: 90 });
+            const evidenceText = rc.evidence.join('; ');
+            doc.font('Helvetica').fontSize(8).fillColor(COLORS.black)
+                .text(evidenceText, PAGE.margin + 104, y, { width: this.contentWidth(doc) - 118 });
+            y += Math.max(14, doc.heightOfString(evidenceText, { width: this.contentWidth(doc) - 118 }) + 4);
+
+            doc.font('Helvetica-Bold').fontSize(8).fillColor(COLORS.gray)
+                .text('Recommendation:', PAGE.margin + 14, y, { width: 90 });
+            doc.font('Helvetica').fontSize(8).fillColor(COLORS.black)
+                .text(rc.recommendation, PAGE.margin + 104, y, { width: this.contentWidth(doc) - 118 });
+            y += Math.max(14, doc.heightOfString(rc.recommendation, { width: this.contentWidth(doc) - 118 }) + 4);
+
+            if (index < rootCauses.length - 1) {
+                doc.y = y + 12;
+            } else {
+                doc.y = y + 6;
+            }
+        });
 
         doc.moveDown(1.4);
     }

@@ -194,6 +194,7 @@ No manual reporting steps required.
 |   |-- HeynaHtmlDashboardGenerator.js
 |   |-- FailureClassifier.js
 |   |-- FailureGrouping.js
+|   |-- FailureSummaryEngine.js
 |-- reports/
 |   |-- HeynaReport.pdf
 |   |-- TestExecutionReport.pdf
@@ -399,6 +400,51 @@ Groups similar failures by category and normalized error signature to reduce rep
 
 - **PDF Report**: Grouped Failure Summary section with table (Category, Signature, Occurrences, Affected Tests)
 - **HTML Dashboard**: Failure Group Summary panel with table and category badges
+
+## Intelligent Failure Summaries
+
+Generates execution intelligence after each test run to help QA engineers quickly understand test health and prioritise investigation.
+
+### Health Status
+
+| Pass Rate | Status |
+|---|---|
+| >= 95% | HEALTHY |
+| >= 80% | WARNING |
+| < 80% | CRITICAL |
+
+### Failure Distribution
+
+Counts and percentages per failure category, computed directly from `executionData`. Categories with zero failures are hidden.
+
+### Top Recurring Failures
+
+Top 5 failure signatures by occurrence count, sourced from the Failure Group Summary.
+
+### Impacted Test Suites
+
+Top 5 most affected feature areas, grouped by the `feature` field on each test case.
+
+### Investigation Recommendations
+
+When a single failure category exceeds 40% of total failures, a targeted recommendation is shown:
+
+| Dominant Category | Recommendation |
+|---|---|
+| ASSERTION_FAILURE | Review business rules and expected outcomes. |
+| LOCATOR_FAILURE | Review selectors and recent UI changes. |
+| TIMEOUT_FAILURE | Review application response times and waiting strategy. |
+| NETWORK_FAILURE | Review environment stability and API availability. |
+| API_FAILURE | Review API contracts, status codes, and endpoint health. |
+| CONFIGURATION_FAILURE | Review browser configuration, environment setup, and test dependencies. |
+| UNKNOWN_FAILURE | Review raw error messages and extend classification rules. |
+
+If no category exceeds 40%, a combined recommendation is displayed.
+
+### Report Integration
+
+- **PDF Report**: INTELLIGENT FAILURE SUMMARY section (after Execution Summary)
+- **HTML Dashboard**: Intelligent Failure Summary panel (after Automation Health)
 
 ## Failure Classification Engine
 

@@ -3,6 +3,7 @@ const path = require('path');
 const PDFDocument = require('pdfkit');
 const Heyna = require('./HeynaReporter');
 const { groupFailures } = require('./FailureGrouping');
+const { generateInsights } = require('./FailureSummaryEngine');
 
 const BRAND = {
     name: 'HEYNA REPORT',
@@ -64,6 +65,8 @@ class HeynaPdfGenerator {
                 this.cover(doc, summary, options);
                 doc.addPage();
                 this.executionSummary(doc, summary);
+                const insights = generateInsights(executionData, summary, failureGroups);
+                this.intelligentFailureSummary(doc, insights);
                 this.testCaseSummary(doc, executionData);
                 this.failedTestAnalysis(doc, failedTests);
                 this.failureGroupSummary(doc, failureGroups);
@@ -207,6 +210,100 @@ class HeynaPdfGenerator {
 
             doc.y = top + height + 16;
         });
+    }
+
+    static intelligentFailureSummary(doc, insights) {
+        this.sectionTitle(doc, 'INTELLIGENT FAILURE SUMMARY');
+        this.ensureSpace(doc, 40);
+
+        const statusColor = insights.healthStatus === 'HEALTHY' ? COLORS.green
+            : insights.healthStatus === 'WARNING' ? COLORS.orange
+            : COLORS.red;
+
+        doc.font('Helvetica-Bold').fontSize(9).fillColor(COLORS.gray)
+            .text('Execution Health: ', PAGE.margin, doc.y, { continued: true });
+        doc.font('Helvetica-Bold').fontSize(9).fillColor(statusColor)
+            .text(insights.healthStatus);
+        doc.moveDown(0.3);
+
+        doc.font('Helvetica-Bold').fontSize(9).fillColor(COLORS.gray)
+            .text('Total Failed Tests: ', PAGE.margin, doc.y, { continued: true });
+        doc.font('Helvetica').fontSize(9).fillColor(COLORS.red)
+            .text(String(insights.totalFailed));
+        doc.moveDown(0.8);
+
+        if (!insights.hasFailures) {
+            this.noteBox(doc, 'All tests passed. No issues detected.', COLORS.green);
+            return;
+        }
+
+        if (insights.distribution.length) {
+            this.ensureSpace(doc, 24 + insights.distribution.length * 20);
+            doc.font('Helvetica-Bold').fontSize(10).fillColor(COLORS.navy)
+                .text('Failure Distribution', PAGE.margin, doc.y);
+            doc.moveDown(0.3);
+
+            const distRows = insights.distribution.map(d => [
+                d.category,
+                `${d.count} (${d.percentage}%)`
+            ]);
+
+            this.table(doc, [
+                { label: 'Category', width: 240 },
+                { label: 'Count', width: 250 }
+            ], distRows, { statusColumn: 0 });
+            doc.moveDown(0.9);
+        }
+
+        if (insights.topRecurring.length) {
+            this.ensureSpace(doc, 24 + insights.topRecurring.length * 20);
+            doc.font('Helvetica-Bold').fontSize(10).fillColor(COLORS.navy)
+                .text('Top Recurring Failures', PAGE.margin, doc.y);
+            doc.moveDown(0.3);
+
+            const recRows = insights.topRecurring.map(r => [
+                r.signature,
+                `${r.occurrences} occurrence${r.occurrences !== 1 ? 's' : ''}`
+            ]);
+
+            this.table(doc, [
+                { label: 'Signature', width: 340 },
+                { label: 'Occurrences', width: 150 }
+            ], recRows, { statusColumn: 0 });
+            doc.moveDown(0.9);
+        }
+
+        if (insights.impactedSuites.length) {
+            this.ensureSpace(doc, 24 + insights.impactedSuites.length * 20);
+            doc.font('Helvetica-Bold').fontSize(10).fillColor(COLORS.navy)
+                .text('Most Impacted Test Suites', PAGE.margin, doc.y);
+            doc.moveDown(0.3);
+
+            const suiteRows = insights.impactedSuites.map(s => [
+                s.suite,
+                `${s.failedCount} failed test${s.failedCount !== 1 ? 's' : ''}`
+            ]);
+
+            this.table(doc, [
+                { label: 'Suite', width: 340 },
+                { label: 'Failed Tests', width: 150 }
+            ], suiteRows, { statusColumn: 0 });
+            doc.moveDown(0.9);
+        }
+
+        this.ensureSpace(doc, 60);
+        const recTop = doc.y;
+        doc.roundedRect(PAGE.margin, recTop, this.contentWidth(doc), 48, 5)
+            .fillAndStroke(COLORS.lightGray, COLORS.midGray);
+        doc.font('Helvetica-Bold').fontSize(9).fillColor(COLORS.navy)
+            .text('Investigation Recommendation', PAGE.margin + 12, recTop + 12,
+                { width: this.contentWidth(doc) - 24 });
+        doc.font('Helvetica').fontSize(8).fillColor(COLORS.black)
+            .text(insights.recommendation.text, PAGE.margin + 12, recTop + 30,
+                { width: this.contentWidth(doc) - 24 });
+        doc.y = recTop + 64;
+
+        doc.moveDown(1.4);
     }
 
     static failureGroupSummary(doc, failureGroups) {

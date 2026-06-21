@@ -60,6 +60,10 @@ All notable changes to HEYNA REPORT will be documented in this file.
 - Failure Group Summary section in PDF report
 - Failure Group Summary section in HTML dashboard
 - Unit tests for signature normalization and failure grouping
+- Intelligent Failure Summaries in `utils/FailureSummaryEngine.js`
+- INTELLIGENT FAILURE SUMMARY section in PDF report
+- Intelligent Failure Summary panel in HTML dashboard
+- Unit tests for health status, distribution, recurring failures, impacted suites, and recommendations
 
 ### Supported Categories
 
@@ -74,6 +78,18 @@ All notable changes to HEYNA REPORT will be documented in this file.
 ### Failure Grouping
 
 Groups similar failures by `failureCategory` + normalized signature. Groups are sorted by frequency descending. Each group shows occurrence count and affected test cases. Displayed in both PDF and HTML reports as a Grouped Failure Summary section.
+
+### Intelligent Failure Summaries
+
+Generates execution intelligence to help QA engineers quickly understand test health:
+
+- **Health Status**: HEALTHY (>95% pass), WARNING (>80%), CRITICAL (<80%)
+- **Failure Distribution**: Count and percentage per failure category (sorted descending)
+- **Top Recurring Failures**: Most frequent failure signatures (top 5)
+- **Impacted Test Suites**: Most affected feature areas (top 5, grouped by `feature` field)
+- **Investigation Recommendations**: Actionable guidance based on dominant failure category
+
+Displayed in both PDF and HTML reports as an Intelligent Failure Summary section.
 
 ## v2.2.0
 

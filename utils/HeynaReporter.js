@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { classifyFailure, FAILURE_CATEGORIES } = require('./FailureClassifier');
 
 const ROOT = process.cwd();
 const EVIDENCE_DIR = path.join(ROOT, 'evidence');
@@ -609,6 +610,10 @@ class HeynaReporter {
     }
 
     static completeTest(testCase, status, duration, errorMessage, extra = {}) {
+        const failureCategory = errorMessage
+            ? classifyFailure(cleanMessage(errorMessage)).category
+            : FAILURE_CATEGORIES.UNKNOWN_FAILURE;
+
         mutateExecution(data => {
             const tc = findOrCreateTestCase(data, testCase);
 
@@ -618,6 +623,10 @@ class HeynaReporter {
             if (extra.failureScreenshot) tc.failureScreenshot = extra.failureScreenshot;
 
             tc.finalResult = tc.status;
+
+            if (normalizeStatus(status) === 'FAILED') {
+                tc.failureCategory = failureCategory;
+            }
 
             if (Array.isArray(tc.attempts) && tc.attempts.length) {
                 const attempt = tc.attempts[tc.attempts.length - 1];
@@ -629,6 +638,10 @@ class HeynaReporter {
             }
         });
 
+        if (normalizeStatus(status) === 'FAILED') {
+            this.recordFailureCategory(failureCategory);
+        }
+
         console.log(`[HEYNA]\n${testCase} => ${normalizeStatus(status)}`);
     }
 
@@ -639,12 +652,14 @@ class HeynaReporter {
                     tc.status = 'FAILED';
                     tc.finalResult = 'FAILED';
                     tc.errorMessage = tc.errorMessage || message;
+                    tc.failureCategory = FAILURE_CATEGORIES.TIMEOUT_FAILURE;
                     if (Array.isArray(tc.attempts) && tc.attempts.length) {
                         const attempt = tc.attempts[tc.attempts.length - 1];
                         attempt.status = 'FAILED';
                         attempt.errorMessage = attempt.errorMessage || message;
                         attempt.finishedAt = attempt.finishedAt || new Date().toISOString();
                     }
+                    this.recordFailureCategory(FAILURE_CATEGORIES.TIMEOUT_FAILURE);
                     console.log(`[HEYNA]\n${tc.testCase} => FAILED`);
                 }
             });
@@ -933,6 +948,13 @@ class HeynaReporter {
             `Captured: ${coverage.captured}`,
             `Missed: ${coverage.missed}`
         ].join('\n'));
+    }
+
+    static recordFailureCategory(category) {
+        mutateMetadata(metadata => {
+            metadata.failureCategories = metadata.failureCategories || {};
+            metadata.failureCategories[category] = (metadata.failureCategories[category] || 0) + 1;
+        });
     }
 
     static isStaticResource(url = '') {

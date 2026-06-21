@@ -100,6 +100,7 @@ Supported Actions:
 * Test Case Summary
 * Step Summary
 * Failed Test Analysis
+* Failure Classification Engine
 * Retry Tracking
 * Coverage Diagnostics
 * Parallel Execution Support
@@ -190,6 +191,7 @@ No manual reporting steps required.
 |   |-- HeynaReporter.js
 |   |-- HeynaPdfGenerator.js
 |   |-- HeynaHtmlDashboardGenerator.js
+|   |-- FailureClassifier.js
 |-- reports/
 |   |-- HeynaReport.pdf
 |   |-- TestExecutionReport.pdf
@@ -378,6 +380,24 @@ module.exports = {
 | important-actions | Capture important user actions |
 
 ---
+
+## Failure Classification Engine
+
+Automatically categorizes test failures into predefined categories.
+
+### Supported Categories
+
+| Category | Description |
+| -------- | ----------- |
+| ASSERTION_FAILURE | Playwright assertion failures (expect, toBe, toEqual, etc.) |
+| LOCATOR_FAILURE | Element not found, strict mode violations, locator interaction failures |
+| TIMEOUT_FAILURE | Timeout exceeded, waiting failures |
+| NETWORK_FAILURE | Network connectivity errors, DNS failures, connection refused |
+| API_FAILURE | API request/response failures, non-2xx status codes |
+| CONFIGURATION_FAILURE | Browser launch failures, fixture errors, environment setup failures |
+| UNKNOWN_FAILURE | Fallback for unclassified failures |
+
+The classification result is stored in `execution.json` as `failureCategory` on each failed test case, aggregated in `metadata.json` under `failureCategories`, and displayed in both PDF and HTML reports.
 
 ## Auto Capture Coverage
 

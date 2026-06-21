@@ -192,6 +192,7 @@ class HeynaPdfGenerator {
                 .text(tc.testCase, PAGE.margin + 14, top + 11, { width: this.contentWidth(doc) - 28 });
 
             let y = top + 48;
+            y = this.inlineField(doc, 'Category', tc.failureCategory || 'UNKNOWN_FAILURE', y, COLORS.red);
             y = this.inlineField(doc, 'Failed Step', desc ? desc.stepName : failedStep.name || 'N/A', y);
             y = this.inlineField(doc, 'Error Message', failedStep.errorMessage || tc.errorMessage || 'N/A', y);
             y = this.inlineField(doc, 'Duration', this.formatDuration(tc.duration), y);

@@ -44,6 +44,28 @@ All notable changes to HEYNA REPORT will be documented in this file.
 - Improved enterprise PDF layout
 - Improved evidence card spacing and screenshot placement
 
+## v2.3.0
+
+### Added
+
+- Failure Classification Engine in `utils/FailureClassifier.js`
+- Automatic failure categorization for test failures
+- `failureCategory` field in `execution.json`
+- `failureCategories` aggregation in `metadata.json`
+- Failure category display in PDF Failed Test Analysis
+- Failure category badge in HTML Dashboard failure cards
+- Unit tests for all classification categories
+
+### Supported Categories
+
+- `ASSERTION_FAILURE` - Playwright assertion failures
+- `LOCATOR_FAILURE` - Element/locator not found or interaction failures
+- `TIMEOUT_FAILURE` - Timeout-related failures
+- `NETWORK_FAILURE` - Network/connectivity failures
+- `API_FAILURE` - API request/response failures
+- `CONFIGURATION_FAILURE` - Browser/config/environment setup failures
+- `UNKNOWN_FAILURE` - Unrecognized failure fallback
+
 ## v2.2.0
 
 ### Added

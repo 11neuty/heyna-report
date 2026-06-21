@@ -609,10 +609,33 @@ class HeynaReporter {
         });
     }
 
+    static detectTrace(testInfo) {
+        if (!testInfo || !testInfo.outputDir) return { traceAvailable: false };
+
+        const tracePath = path.join(testInfo.outputDir, 'trace.zip');
+        const traceAvailable = fs.existsSync(tracePath);
+
+        if (!traceAvailable) return { traceAvailable: false };
+
+        try {
+            const stat = fs.statSync(tracePath);
+            return {
+                traceAvailable: true,
+                traceFile: path.relative(ROOT, tracePath),
+                traceSize: stat.size,
+                traceModified: stat.mtime.toISOString()
+            };
+        } catch (error) {
+            return { traceAvailable: false };
+        }
+    }
+
     static completeTest(testCase, status, duration, errorMessage, extra = {}) {
         const failureCategory = errorMessage
             ? classifyFailure(cleanMessage(errorMessage)).category
             : FAILURE_CATEGORIES.UNKNOWN_FAILURE;
+
+        const traceMeta = this.detectTrace(extra.testInfo);
 
         mutateExecution(data => {
             const tc = findOrCreateTestCase(data, testCase);
@@ -621,6 +644,13 @@ class HeynaReporter {
             tc.duration = duration || 0;
             if (errorMessage) tc.errorMessage = cleanMessage(errorMessage);
             if (extra.failureScreenshot) tc.failureScreenshot = extra.failureScreenshot;
+
+            tc.traceAvailable = traceMeta.traceAvailable;
+            if (traceMeta.traceAvailable) {
+                tc.traceFile = traceMeta.traceFile;
+                tc.traceSize = traceMeta.traceSize;
+                tc.traceModified = traceMeta.traceModified;
+            }
 
             tc.finalResult = tc.status;
 
@@ -635,6 +665,10 @@ class HeynaReporter {
                 attempt.finishedAt = new Date().toISOString();
                 if (errorMessage) attempt.errorMessage = cleanMessage(errorMessage);
                 if (extra.failureScreenshot) attempt.failureScreenshot = extra.failureScreenshot;
+                if (traceMeta.traceAvailable) {
+                    attempt.traceFile = traceMeta.traceFile;
+                    attempt.traceSize = traceMeta.traceSize;
+                }
             }
         });
 

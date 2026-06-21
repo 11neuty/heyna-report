@@ -68,6 +68,21 @@ All notable changes to HEYNA REPORT will be documented in this file.
 - ROOT CAUSE ANALYSIS section in PDF report
 - Root Cause Analysis panel in HTML dashboard
 - Unit tests for clustering, confidence scoring, cross-category merge, and edge cases
+- Playwright Trace Intelligence via `utils/HeynaReporter.js` trace detection
+- TRACE INTELLIGENCE section in PDF report
+- Trace Intelligence panel in HTML dashboard
+- Unit tests for trace detection, persistence, formatting, and report rendering
+
+### Trace Intelligence
+
+Detects Playwright trace artifacts (`trace.zip`) from `testInfo.outputDir` during test completion. Includes metadata extraction (file size, modified timestamp) and graceful handling of missing traces. Displayed as a TRACE INTELLIGENCE section in PDF and a Trace Intelligence panel in HTML.
+
+- **Trace Detection**: Auto-detected via `Heyna.detectTrace(testInfo)` in `completeTest()` using `testInfo.outputDir`
+- **Metadata**: File existence, path relative to project root, byte size, ISO modified timestamp
+- **Trace Status**: Available / Not Available badge per test case
+- **Missing Traces**: Graceful empty state in both PDF and HTML when no traces collected
+
+Displayed in both PDF and HTML reports as a Trace Intelligence section, placed after Root Cause Analysis.
 
 ### Root Cause Taxonomy (6 categories)
 

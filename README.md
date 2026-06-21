@@ -446,6 +446,50 @@ If no category exceeds 40%, a combined recommendation is displayed.
 - **PDF Report**: INTELLIGENT FAILURE SUMMARY section (after Execution Summary)
 - **HTML Dashboard**: Intelligent Failure Summary panel (after Automation Health)
 
+## Playwright Trace Intelligence
+
+Detects Playwright trace artifacts (`trace.zip`) from `testInfo.outputDir` and includes trace references in the generated reports.
+
+### Trace Detection
+
+Within `test.afterEach()` hook, pass `testInfo` to `Heyna.completeTest()`:
+
+```js
+Heyna.completeTest(
+    currentTC,
+    testInfo.status.toUpperCase(),
+    testInfo.duration,
+    testInfo.error ? testInfo.error.message : undefined,
+    { failureScreenshot, testInfo }
+);
+```
+
+The reporter calls `Heyna.detectTrace(testInfo)` which checks `testInfo.outputDir/trace.zip` using `fs.existsSync()` and `fs.statSync()`.
+
+### Metadata Stored (per test case in execution.json)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `traceAvailable` | boolean | Whether trace.zip was found |
+| `traceFile` | string | Relative path from project root |
+| `traceSize` | number | File size in bytes |
+| `traceModified` | string | ISO timestamp of last modification |
+
+### Graceful Degradation
+
+| Scenario | Behavior |
+|----------|----------|
+| Trace disabled (`trace: 'off'`) | `traceAvailable: false`, empty state displayed |
+| Retries disabled (no traces generated) | `traceAvailable: false`, empty state displayed |
+| Trace file deleted after run | Metadata still references path, report shows file info |
+| Legacy execution.json (no trace fields) | Fields absent, section skipped gracefully |
+| `testInfo` not passed to `completeTest()` | Trace detection skipped, `traceAvailable: false` |
+
+### Display
+
+- **PDF Report**: TRACE INTELLIGENCE section (after Root Cause Analysis) with table: Test Case, Trace status, File Size, Path
+- **HTML Dashboard**: Trace Intelligence panel (after Root Cause Analysis) with status badge, file size, and clickable download link
+
 ## Root Cause Clustering Analysis
 
 Identifies failures that likely originate from the same underlying cause by merging Failure Groups that share the same feature area and have compatible failure patterns.

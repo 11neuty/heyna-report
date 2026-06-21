@@ -44,7 +44,7 @@ test.afterEach(async ({ page }, testInfo) => {
         testInfo.status.toUpperCase(),
         testInfo.duration,
         testInfo.error ? testInfo.error.message : undefined,
-        { failureScreenshot }
+        { failureScreenshot, testInfo }
     );
 });
 

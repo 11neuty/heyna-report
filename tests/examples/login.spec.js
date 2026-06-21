@@ -89,7 +89,8 @@ test.afterEach(
                     : undefined,
 
                 {
-                    failureScreenshot
+                    failureScreenshot,
+                    testInfo
                 }
 
             );

@@ -70,6 +70,7 @@ class HeynaPdfGenerator {
                 this.intelligentFailureSummary(doc, insights);
                 const rootCauses = clusterRootCauses(executionData, failureGroups);
                 this.rootCauseAnalysis(doc, rootCauses);
+                this.traceIntelligence(doc, executionData);
                 this.testCaseSummary(doc, executionData);
                 this.failedTestAnalysis(doc, failedTests);
                 this.failureGroupSummary(doc, failureGroups);
@@ -378,6 +379,46 @@ class HeynaPdfGenerator {
         });
 
         doc.moveDown(1.4);
+    }
+
+    static traceIntelligence(doc, executionData) {
+        this.sectionTitle(doc, 'TRACE INTELLIGENCE');
+
+        const tracedTests = executionData.filter(tc => tc.traceAvailable === true);
+        const absentTests = executionData.filter(tc => tc.traceAvailable === false);
+
+        if (!tracedTests.length && !absentTests.length) {
+            this.noteBox(doc, 'No trace artifacts detected.', COLORS.gray);
+            return;
+        }
+
+        if (!tracedTests.length) {
+            this.noteBox(doc, 'No trace artifacts were collected during this execution.', COLORS.gray);
+            return;
+        }
+
+        const rows = tracedTests.map(tc => [
+            tc.testCase,
+            'Available',
+            this.formatFileSize(tc.traceSize),
+            tc.traceFile || '-'
+        ]);
+
+        this.table(doc, [
+            { label: 'Test Case', width: 200 },
+            { label: 'Trace', width: 80 },
+            { label: 'Size', width: 80 },
+            { label: 'Path', width: 170 }
+        ], rows, { statusColumn: 1 });
+
+        doc.moveDown(1.4);
+    }
+
+    static formatFileSize(bytes) {
+        const value = Number(bytes || 0);
+        if (value < 1024) return `${value} B`;
+        if (value < 1048576) return `${(value / 1024).toFixed(1)} KB`;
+        return `${(value / 1048576).toFixed(1)} MB`;
     }
 
     static failureGroupSummary(doc, failureGroups) {

@@ -1,15 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const { classifyFailure, FAILURE_CATEGORIES } = require('./FailureClassifier');
-
-const ROOT = process.cwd();
-const EVIDENCE_DIR = path.join(ROOT, 'evidence');
-const RESULT_DIR = path.join(ROOT, 'test-results');
-const EXECUTION_FILE = path.join(RESULT_DIR, 'execution.json');
-const METADATA_FILE = path.join(RESULT_DIR, 'metadata.json');
-const RUN_LOCK_FILE = path.join(RESULT_DIR, '.heyna-run.lock');
-const WRITE_LOCK_FILE = path.join(RESULT_DIR, '.heyna-write.lock');
-const CONFIG_FILE = path.join(ROOT, 'heyna.config.js');
+const { DEFAULT_HISTORY_CONFIG, mergeHistoryConfig, resolveArtifactPaths } = require('./ArtifactPaths');
+const { ensureDir, readJson, atomicWriteJson } = require('./JsonFile');
 
 const DEFAULT_CONFIG = {
     autoCapture: true,
@@ -54,7 +47,8 @@ const DEFAULT_CONFIG = {
     ],
     apiLogging: {
         include: ['/api/', 'saucedemo.com']
-    }
+    },
+    history: DEFAULT_HISTORY_CONFIG
 };
 
 const defaultStepDescriptions = {
@@ -68,23 +62,8 @@ const defaultStepDescriptions = {
     Step04_Verify_Error_Message: { stepName: 'Verify Error Message', action: 'Verify the login error message is displayed.', expectedResult: 'Error message is visible for invalid credentials.' }
 };
 
-function ensureDir(folder) {
-    if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
-}
-
-function readJson(file, fallback) {
-    if (!fs.existsSync(file)) return fallback;
-
-    try {
-        return JSON.parse(fs.readFileSync(file, 'utf8'));
-    } catch (error) {
-        return fallback;
-    }
-}
-
 function writeJson(file, data) {
-    ensureDir(path.dirname(file));
-    fs.writeFileSync(file, JSON.stringify(data, null, 2));
+    atomicWriteJson(file, data);
 }
 
 function sleep(ms) {
@@ -92,18 +71,19 @@ function sleep(ms) {
 }
 
 function withWriteLock(callback) {
-    ensureDir(RESULT_DIR);
+    const paths = HeynaReporter.getPaths();
+    ensureDir(paths.resultDir);
 
     const timeoutAt = Date.now() + 5000;
     let lockHandle;
 
     while (!lockHandle) {
         try {
-            lockHandle = fs.openSync(WRITE_LOCK_FILE, 'wx');
+            lockHandle = fs.openSync(paths.writeLockFile, 'wx');
         } catch (error) {
             try {
-                const age = Date.now() - fs.statSync(WRITE_LOCK_FILE).mtimeMs;
-                if (age > 10000) fs.rmSync(WRITE_LOCK_FILE, { force: true });
+                const age = Date.now() - fs.statSync(paths.writeLockFile).mtimeMs;
+                if (age > 10000) fs.rmSync(paths.writeLockFile, { force: true });
             } catch (statError) {
                 // Continue retry loop if the lock disappears between checks.
             }
@@ -120,24 +100,24 @@ function withWriteLock(callback) {
         return callback();
     } finally {
         fs.closeSync(lockHandle);
-        fs.rmSync(WRITE_LOCK_FILE, { force: true });
+        fs.rmSync(paths.writeLockFile, { force: true });
     }
 }
 
 function mutateExecution(mutator) {
     return withWriteLock(() => {
-        const data = readJson(EXECUTION_FILE, []);
+        const data = readJson(HeynaReporter.getPaths().executionFile, []);
         const result = mutator(data) || data;
-        writeJson(EXECUTION_FILE, result);
+        writeJson(HeynaReporter.getPaths().executionFile, result);
         return result;
     });
 }
 
 function mutateMetadata(mutator) {
     return withWriteLock(() => {
-        const metadata = readJson(METADATA_FILE, {});
+        const metadata = readJson(HeynaReporter.getPaths().metadataFile, {});
         const result = mutator(metadata) || metadata;
-        writeJson(METADATA_FILE, result);
+        writeJson(HeynaReporter.getPaths().metadataFile, result);
         return result;
     });
 }
@@ -145,7 +125,9 @@ function mutateMetadata(mutator) {
 function normalizeStatus(status) {
     const value = String(status || '').toUpperCase();
     if (value === 'PASS') return 'PASSED';
-    if (value === 'FAIL' || value === 'FAILED' || value === 'TIMEDOUT' || value === 'INTERRUPTED') return 'FAILED';
+    if (value === 'FAIL' || value === 'FAILED') return 'FAILED';
+    if (value === 'TIMEDOUT') return 'TIMEDOUT';
+    if (value === 'INTERRUPTED') return 'INTERRUPTED';
     if (value === 'SKIP' || value === 'SKIPPED') return 'SKIPPED';
     if (value === 'PASSED') return 'PASSED';
     if (value === 'RUNNING') return 'RUNNING';
@@ -153,7 +135,7 @@ function normalizeStatus(status) {
 }
 
 function stepStatus(status) {
-    return normalizeStatus(status) === 'FAILED' ? 'FAIL' : 'PASS';
+    return ['FAILED', 'TIMEDOUT', 'INTERRUPTED'].includes(normalizeStatus(status)) ? 'FAIL' : 'PASS';
 }
 
 function safeName(value) {
@@ -178,25 +160,46 @@ function titleCase(value) {
         .replace(/\w\S*/g, word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
 }
 
-function loadConfig() {
+function loadConfig(projectRoot = process.env.HEYNA_PROJECT_ROOT || process.cwd()) {
     let userConfig = {};
+    const configFile = path.join(path.resolve(projectRoot), 'heyna.config.js');
 
-    if (fs.existsSync(CONFIG_FILE)) {
-        delete require.cache[require.resolve(CONFIG_FILE)];
-        userConfig = require(CONFIG_FILE);
+    if (fs.existsSync(configFile)) {
+        delete require.cache[require.resolve(configFile)];
+        userConfig = require(configFile);
     }
 
-        return {
-            ...DEFAULT_CONFIG,
-            ...userConfig,
-            apiLogging: {
-                ...DEFAULT_CONFIG.apiLogging,
-                ...(userConfig.apiLogging || {})
-            },
+    return {
+        ...DEFAULT_CONFIG,
+        ...userConfig,
+        projectRoot: path.resolve(projectRoot),
+        apiLogging: {
+            ...DEFAULT_CONFIG.apiLogging,
+            ...(userConfig.apiLogging || {})
+        },
+        history: mergeHistoryConfig(userConfig.history),
         autoActions: userConfig.autoActions || DEFAULT_CONFIG.autoActions,
         locatorFactories: userConfig.locatorFactories || DEFAULT_CONFIG.locatorFactories,
         chainMethods: userConfig.chainMethods || DEFAULT_CONFIG.chainMethods,
         importantActions: userConfig.importantActions || DEFAULT_CONFIG.importantActions
+    };
+}
+
+function mergeReporterConfig(baseConfig, overrides = {}) {
+    return {
+        ...baseConfig,
+        ...overrides,
+        projectRoot: path.resolve(overrides.projectRoot || baseConfig.projectRoot || process.cwd()),
+        apiLogging: {
+            ...DEFAULT_CONFIG.apiLogging,
+            ...(baseConfig.apiLogging || {}),
+            ...(overrides.apiLogging || {})
+        },
+        history: mergeHistoryConfig(baseConfig.history, overrides.history),
+        autoActions: overrides.autoActions || baseConfig.autoActions || DEFAULT_CONFIG.autoActions,
+        locatorFactories: overrides.locatorFactories || baseConfig.locatorFactories || DEFAULT_CONFIG.locatorFactories,
+        chainMethods: overrides.chainMethods || baseConfig.chainMethods || DEFAULT_CONFIG.chainMethods,
+        importantActions: overrides.importantActions || baseConfig.importantActions || DEFAULT_CONFIG.importantActions
     };
 }
 
@@ -260,19 +263,20 @@ class HeynaReporter {
         return this.config;
     }
 
+    static getPaths() {
+        return resolveArtifactPaths({
+            projectRoot: this.config.projectRoot || process.env.HEYNA_PROJECT_ROOT || process.cwd(),
+            artifactRoot: this.config.artifactRoot || process.env.HEYNA_ARTIFACT_ROOT || this.config.projectRoot || process.cwd(),
+            config: this.config,
+            history: this.config.history
+        });
+    }
+
     static configure(config = {}) {
-        this.config = {
-            ...this.config,
-            ...config,
-            apiLogging: {
-                ...this.config.apiLogging,
-                ...(config.apiLogging || {})
-            },
-            autoActions: config.autoActions || this.config.autoActions,
-            locatorFactories: config.locatorFactories || this.config.locatorFactories,
-            chainMethods: config.chainMethods || this.config.chainMethods,
-            importantActions: config.importantActions || this.config.importantActions
-        };
+        const changesProjectRoot = Object.prototype.hasOwnProperty.call(config, 'projectRoot')
+            && path.resolve(config.projectRoot) !== path.resolve(this.config.projectRoot || process.cwd());
+        const baseConfig = changesProjectRoot ? loadConfig(path.resolve(config.projectRoot)) : this.config;
+        this.config = mergeReporterConfig(baseConfig, config);
 
         if (config.project) process.env.HEYNA_PROJECT = config.project;
         if (config.feature) process.env.HEYNA_FEATURE = config.feature;
@@ -287,17 +291,18 @@ class HeynaReporter {
     }
 
     static initializeRun(metadata = {}) {
-        ensureDir(RESULT_DIR);
+        const paths = this.getPaths();
+        ensureDir(paths.resultDir);
 
         const runState = withWriteLock(() => {
-            const hasActiveRun = fs.existsSync(RUN_LOCK_FILE);
+            const hasActiveRun = fs.existsSync(paths.runLockFile);
             const shouldReset = metadata.reset === true
                 || !hasActiveRun
-                || !fs.existsSync(EXECUTION_FILE);
+                || !fs.existsSync(paths.executionFile);
 
             if (shouldReset) {
-                writeJson(EXECUTION_FILE, []);
-                fs.writeFileSync(RUN_LOCK_FILE, new Date().toISOString());
+                writeJson(paths.executionFile, []);
+                fs.writeFileSync(paths.runLockFile, new Date().toISOString());
             }
 
             return { shouldReset };
@@ -326,8 +331,9 @@ class HeynaReporter {
     }
 
     static initializeTest(testCase, metadata = {}) {
-        if (!fs.existsSync(EXECUTION_FILE)) writeJson(EXECUTION_FILE, []);
-        if (!fs.existsSync(METADATA_FILE)) this.updateMetadata({});
+        const paths = this.getPaths();
+        if (!fs.existsSync(paths.executionFile)) writeJson(paths.executionFile, []);
+        if (!fs.existsSync(paths.metadataFile)) this.updateMetadata({});
 
         mutateExecution(data => {
             const existing = data.find(tc => tc.testCase === testCase);
@@ -621,7 +627,7 @@ class HeynaReporter {
             const stat = fs.statSync(tracePath);
             return {
                 traceAvailable: true,
-                traceFile: path.relative(ROOT, tracePath),
+                traceFile: path.relative(this.getPaths().rootDir, tracePath),
                 traceSize: stat.size,
                 traceModified: stat.mtime.toISOString()
             };
@@ -654,7 +660,7 @@ class HeynaReporter {
 
             tc.finalResult = tc.status;
 
-            if (normalizeStatus(status) === 'FAILED') {
+            if (['FAILED', 'TIMEDOUT', 'INTERRUPTED'].includes(normalizeStatus(status))) {
                 tc.failureCategory = failureCategory;
             }
 
@@ -672,7 +678,7 @@ class HeynaReporter {
             }
         });
 
-        if (normalizeStatus(status) === 'FAILED') {
+        if (['FAILED', 'TIMEDOUT', 'INTERRUPTED'].includes(normalizeStatus(status))) {
             this.recordFailureCategory(failureCategory);
         }
 
@@ -680,6 +686,7 @@ class HeynaReporter {
     }
 
     static markRunningTestsAsFailed(message = 'Test did not complete before report generation.') {
+        let newlyFailed = 0;
         mutateExecution(data => {
             data.forEach(tc => {
                 if (normalizeStatus(tc.status) === 'RUNNING') {
@@ -693,24 +700,32 @@ class HeynaReporter {
                         attempt.errorMessage = attempt.errorMessage || message;
                         attempt.finishedAt = attempt.finishedAt || new Date().toISOString();
                     }
-                    this.recordFailureCategory(FAILURE_CATEGORIES.TIMEOUT_FAILURE);
+                    newlyFailed += 1;
                     console.log(`[HEYNA]\n${tc.testCase} => FAILED`);
                 }
             });
         });
+        if (newlyFailed) {
+            mutateMetadata(metadata => {
+                metadata.failureCategories = metadata.failureCategories || {};
+                metadata.failureCategories[FAILURE_CATEGORIES.TIMEOUT_FAILURE] =
+                    (metadata.failureCategories[FAILURE_CATEGORIES.TIMEOUT_FAILURE] || 0) + newlyFailed;
+            });
+        }
     }
 
     static async captureEvidence(page, testCase, stepName, prefix) {
-        const folder = path.join(EVIDENCE_DIR, testCase);
+        const paths = this.getPaths();
+        const folder = path.join(paths.evidenceDir, testCase);
         ensureDir(folder);
         const screenshotPath = path.join(folder, `${Date.now()}_${prefix ? `${prefix}_` : ''}${safeName(stepName)}.png`);
 
         await page.screenshot({ path: screenshotPath, fullPage: true });
-        return path.relative(ROOT, screenshotPath);
+        return path.relative(paths.rootDir, screenshotPath);
     }
 
     static saveApiLogs(testCase, logs) {
-        const folder = path.join(EVIDENCE_DIR, testCase);
+        const folder = path.join(this.getPaths().evidenceDir, testCase);
         ensureDir(folder);
         writeJson(path.join(folder, 'api-log.json'), this.filterApiLogs(logs));
     }
@@ -732,7 +747,7 @@ class HeynaReporter {
     }
 
     static getMetadata() {
-        return readJson(METADATA_FILE, {
+        return readJson(this.getPaths().metadataFile, {
             project: process.env.HEYNA_PROJECT || 'Project',
             feature: process.env.HEYNA_FEATURE || 'Feature',
             environment: process.env.ENVIRONMENT || 'QA',
@@ -744,7 +759,7 @@ class HeynaReporter {
     }
 
     static getExecutionData() {
-        return readJson(EXECUTION_FILE, []);
+        return readJson(this.getPaths().executionFile, []);
     }
 
     static getSummary() {
@@ -753,6 +768,8 @@ class HeynaReporter {
         const passed = results.filter(tc => normalizeStatus(tc.status) === 'PASSED').length;
         const failed = results.filter(tc => normalizeStatus(tc.status) === 'FAILED').length;
         const skipped = results.filter(tc => normalizeStatus(tc.status) === 'SKIPPED').length;
+        const timedOut = results.filter(tc => normalizeStatus(tc.status) === 'TIMEDOUT').length;
+        const interrupted = results.filter(tc => normalizeStatus(tc.status) === 'INTERRUPTED').length;
         const totalDuration = results.reduce((sum, tc) => sum + (tc.duration || 0), 0);
         const metadata = this.getMetadata();
 
@@ -762,10 +779,21 @@ class HeynaReporter {
             passed,
             failed,
             skipped,
+            timedOut,
+            interrupted,
+            unsuccessful: failed + timedOut + interrupted,
             passRate: total ? ((passed / total) * 100).toFixed(2) : '0.00',
             totalDuration,
             executionDate: new Date(metadata.executionStartTime || Date.now()).toLocaleString()
         };
+    }
+
+    static completeRun() {
+        fs.rmSync(this.getPaths().runLockFile, { force: true });
+    }
+
+    static normalizeStatus(status) {
+        return normalizeStatus(status);
     }
 
     static addStepDescription(stepName, description) {

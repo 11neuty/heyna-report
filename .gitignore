@@ -6,6 +6,14 @@ playwright-report/
 allure-results/
 dashboard/
 history/executions/*.json
+history/runs/
+history/.temp/
+history/latest.json
+history/.migration-state.json
+history/.history.lock
+history/*.lock
+history/.*.lock
+history/.*.tmp
 
 *.pdf
 *.log

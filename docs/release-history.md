@@ -1,6 +1,21 @@
 # Release History
 
-## v2.3.0-005 — Trace Intelligence (Latest)
+## Unreleased — v2.4.0-next.0 — Historical Analytics Foundation
+
+Development version for the GitHub v2.4.0 milestone. It is not a stable release and has no stable v2.4.0 tag.
+
+- Durable immutable per-run storage
+- Atomic publication and latest pointer
+- Summary/schema/manifest contracts
+- Retrieval, retention, recovery, and legacy migration APIs
+- Runtime path isolation and resilient teardown orchestration
+
+## v2.3.1 — Latest stable
+
+- Latest stable HEYNA REPORT release
+- Includes the v2.3 trace intelligence, root-cause, failure analysis, dashboard, and reporting work listed below
+
+## v2.3.0-005 — Trace Intelligence
 
 - Playwright Trace Viewer integration
 - Action enrichment from trace data

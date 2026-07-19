@@ -9,7 +9,7 @@ function groupFailures(executionData) {
 
     for (const tc of executionData) {
         const status = String(tc.status || '').toUpperCase();
-        if (status !== 'FAILED' && status !== 'FAILED:' && status !== 'FAIL') {
+        if (!['FAILED', 'FAILED:', 'FAIL', 'TIMEDOUT', 'INTERRUPTED'].includes(status)) {
             continue;
         }
 

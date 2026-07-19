@@ -43,7 +43,7 @@ const RECOMMENDATIONS = {
 
 function isFailed(status) {
     const s = String(status || '').toUpperCase();
-    return s === 'FAILED' || s === 'FAILED:' || s === 'FAIL';
+    return ['FAILED', 'FAILED:', 'FAIL', 'TIMEDOUT', 'INTERRUPTED'].includes(s);
 }
 
 function computeHealthStatus(total, passRate) {

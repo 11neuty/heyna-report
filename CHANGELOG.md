@@ -2,6 +2,35 @@
 
 All notable changes to HEYNA REPORT will be documented in this file.
 
+## Unreleased — v2.4.0-next.0
+
+This is an unreleased development version for the GitHub v2.4.0 milestone. The stable `v2.4.0` tag will be created only after the full milestone is complete. v2.3.1 remains the latest stable release.
+
+### Added
+
+- Versioned immutable execution history under `history/runs/<runId>`.
+- Atomic temporary-run publication and portable `history/latest.json` pointer.
+- CommonJS `HistoryManager` APIs for run retrieval, date-range queries, retention, recovery, and safe legacy migration.
+- Independently versioned summary, schema, and artifact manifest documents.
+- Runtime artifact-root resolution for isolated framework tests and embedded consumers.
+
+### Changed
+
+- Teardown now attempts PDF, HTML, and history stages independently and always removes the run lock.
+- Reporter JSON writes are atomic and corrupt existing JSON is reported instead of silently replaced.
+- `TIMEDOUT` and `INTERRUPTED` remain distinct canonical statuses.
+- Package metadata now identifies the unreleased `heyna-report` v2.4.0-next.0 development version under the repository's MIT license.
+
+### Compatibility
+
+- Current-run files and report locations are unchanged.
+- `failed` counts only canonical `FAILED` results; `timedOut` and `interrupted` are separate. The explicit `unsuccessful` metric is `failed + timedOut + interrupted`.
+- Retention remains disabled by default.
+
+## v2.3.1 — Latest stable
+
+- Latest stable release before the v2.4.0 historical analytics milestone.
+
 ## v1.0.0
 
 ### Added

@@ -37,11 +37,13 @@ const COLORS = {
 class HeynaPdfGenerator {
     static async generate(options = {}) {
         return new Promise((resolve, reject) => {
-            const reportDir = path.join(process.cwd(), 'reports');
+            if (options.artifactRoot) Heyna.configure({ artifactRoot: options.artifactRoot });
+            const paths = options.paths || Heyna.getPaths();
+            const reportDir = paths.reportDir;
             fs.mkdirSync(reportDir, { recursive: true });
 
-            const outputPath = options.outputPath || path.join(reportDir, 'HeynaReport.pdf');
-            const legacyPath = path.join(reportDir, 'TestExecutionReport.pdf');
+            const outputPath = options.outputPath || paths.reportFile;
+            const legacyPath = paths.legacyReportFile;
             const doc = new PDFDocument({
                 size: 'A4',
                 margin: PAGE.margin,
@@ -60,7 +62,7 @@ class HeynaPdfGenerator {
             try {
                 const summary = Heyna.getSummary();
                 const executionData = Heyna.getExecutionData();
-                const failedTests = executionData.filter(tc => this.normalizeStatus(tc.status) === 'FAILED');
+                const failedTests = executionData.filter(tc => ['FAILED', 'TIMEDOUT', 'INTERRUPTED'].includes(this.normalizeStatus(tc.status)));
                 const failureGroups = groupFailures(executionData);
 
                 this.cover(doc, summary, options);
@@ -505,7 +507,7 @@ class HeynaPdfGenerator {
     }
 
     static apiActivity(doc, testCase) {
-        const file = path.join(process.cwd(), 'evidence', testCase, 'api-log.json');
+        const file = path.join(Heyna.getPaths().evidenceDir, testCase, 'api-log.json');
         if (!fs.existsSync(file)) return;
 
         const logs = Heyna.filterApiLogs(JSON.parse(fs.readFileSync(file, 'utf8')));
@@ -810,7 +812,7 @@ class HeynaPdfGenerator {
     static logoPath(customPath) {
         const candidates = [
             customPath,
-            path.join(process.cwd(), 'assets', 'heyna-logo.png')
+            path.join(Heyna.getPaths().assetsDir, 'heyna-logo.png')
         ].filter(Boolean);
 
         return candidates.find(candidate => fs.existsSync(candidate)) || null;
@@ -820,12 +822,12 @@ class HeynaPdfGenerator {
         if (!screenshot) return null;
         const absolutePath = path.isAbsolute(screenshot)
             ? screenshot
-            : path.join(process.cwd(), screenshot);
+            : path.join(Heyna.getPaths().rootDir, screenshot);
         return fs.existsSync(absolutePath) ? absolutePath : null;
     }
 
     static findLatestFailedScreenshot(testCase) {
-        const folder = path.join(process.cwd(), 'evidence', testCase);
+        const folder = path.join(Heyna.getPaths().evidenceDir, testCase);
         if (!fs.existsSync(folder)) return null;
 
         const file = fs.readdirSync(folder)
@@ -852,7 +854,7 @@ class HeynaPdfGenerator {
     static statusColor(status) {
         const normalized = this.normalizeStatus(status);
         if (normalized === 'PASSED' || normalized === 'PASSED:') return COLORS.green;
-        if (normalized === 'FAILED' || normalized === 'FAILED:') return COLORS.red;
+        if (['FAILED', 'FAILED:', 'TIMEDOUT', 'INTERRUPTED'].includes(normalized)) return COLORS.red;
         if (normalized === 'SKIPPED' || normalized === 'SKIPPED:') return COLORS.orange;
         return COLORS.black;
     }

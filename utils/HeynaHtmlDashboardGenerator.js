@@ -13,7 +13,8 @@ const BRAND = {
 
 class HeynaHtmlDashboardGenerator {
     static async generate(options = {}) {
-        const outputPath = options.outputPath || path.join(process.cwd(), 'dashboard', 'index.html');
+        if (options.artifactRoot) Heyna.configure({ artifactRoot: options.artifactRoot });
+        const outputPath = options.outputPath || (options.paths || Heyna.getPaths()).dashboardFile;
         fs.mkdirSync(path.dirname(outputPath), { recursive: true });
 
         const metadata = Heyna.getMetadata();
@@ -378,11 +379,11 @@ const cards = [
     }
 
     static testCaseTable(executionData) {
-        const rows = executionData.map(testCase => {
+        const failureAnchors = this.failureAnchorIds(executionData);
+        const rows = executionData.map((testCase, index) => {
             const status = this.normalizeStatus(testCase.status);
-            const testId = this.escape(testCase.testCase).replace(/\s+/g, '-');
-            const nameCell = status === 'FAILED'
-                ? `<a href="#${testId}-failure" class="test-link">${this.escape(testCase.testCase)}</a>`
+            const nameCell = ['FAILED', 'TIMEDOUT', 'INTERRUPTED'].includes(status)
+                ? `<a href="#${failureAnchors[index]}" class="test-link">${this.escape(testCase.testCase)}</a>`
                 : this.escape(testCase.testCase);
             return `<tr>
       <td>${nameCell}</td>
@@ -402,6 +403,17 @@ const cards = [
     <tbody>${rows}</tbody>
   </table></div>` : '<p class="empty-state">No test execution data found.</p>'}
 </section>`;
+    }
+
+    static failureAnchorIds(executionData) {
+        return executionData.map((testCase, index) => {
+            const slug = String(testCase.testCase || 'test')
+                .normalize('NFKD')
+                .replace(/[^A-Za-z0-9_-]+/g, '-')
+                .replace(/^-+|-+$/g, '')
+                .toLowerCase() || 'test';
+            return `${slug}-failure-${String(index + 1).padStart(3, '0')}`;
+        });
     }
 
     static coverageDiagnostics(coverage) {
@@ -435,18 +447,18 @@ const cards = [
     }
 
     static recentFailedTests(executionData) {
+        const failureAnchors = this.failureAnchorIds(executionData);
         const failedTests = executionData
-            .filter(testCase => this.normalizeStatus(testCase.status) === 'FAILED')
-            .slice(-5)
+            .map((testCase, index) => ({ testCase, anchor: failureAnchors[index] }))
+            .filter(item => ['FAILED', 'TIMEDOUT', 'INTERRUPTED'].includes(this.normalizeStatus(item.testCase.status)))
             .reverse();
 
         return `<section class="panel" id="failures" aria-labelledby="failed-heading">
 
-  ${failedTests.length ? `<div class="failed-list">${failedTests.map(testCase => {
-    const testId = this.escape(testCase.testCase).replace(/\s+/g, '-');
+  ${failedTests.length ? `<div class="failed-list">${failedTests.map(({ testCase, anchor }) => {
     const category = testCase.failureCategory || 'UNKNOWN_FAILURE';
     const categoryClass = 'category-' + category.toLowerCase();
-    let html = `<article class="failed-card" id="${testId}-failure"><strong>${this.escape(testCase.testCase)}</strong><span class="failure-category ${categoryClass}">${this.escape(category)}</span><p>${this.escape(testCase.errorMessage || 'No error message captured.')}</p>`;
+    let html = `<article class="failed-card" id="${anchor}"><strong>${this.escape(testCase.testCase)}</strong><span class="failure-category ${categoryClass}">${this.escape(category)}</span><p>${this.escape(testCase.errorMessage || 'No error message captured.')}</p>`;
     if (testCase.failureScreenshot) {
       const screenshotPath = testCase.failureScreenshot.replace(/\\/g, "/");
     html += `<div class="failure-screenshot"><img src="${this.escape("../" + screenshotPath)}" alt="${this.escape(testCase.testCase)} failure" loading="lazy"><a href="${this.escape("../" + screenshotPath)}" target="_blank" class="screenshot-link">Open Full Size</a></div>`;
@@ -672,13 +684,14 @@ const cards = [
     static normalizeStatus(status) {
         const value = String(status || '').toUpperCase();
         if (value === 'PASS') return 'PASSED';
-        if (value === 'FAIL' || value === 'TIMEDOUT' || value === 'INTERRUPTED') return 'FAILED';
+        if (value === 'FAIL') return 'FAILED';
         if (value === 'SKIP') return 'SKIPPED';
         return value || 'UNKNOWN';
     }
 
     static statusClass(status) {
         const normalized = this.normalizeStatus(status).toLowerCase();
+        if (['timedout', 'interrupted'].includes(normalized)) return 'status-failed';
         if (['passed', 'failed', 'skipped', 'running'].includes(normalized)) return `status-${normalized}`;
         return 'status-unknown';
     }

@@ -28,6 +28,9 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Run execution history contract tests on Node 20
+        run: npm run test:history
+
       - name: Generate HEYNA REPORT
         if: always()
         run: node regenerate-report.js

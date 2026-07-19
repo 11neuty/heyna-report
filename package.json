@@ -1,26 +1,25 @@
 {
-  "name": "project4",
-  "version": "1.0.0",
-  "description": "",
+  "name": "heyna-report",
+  "version": "2.4.0-next.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "description": "Durable Playwright execution reporting and evidence storage.",
   "main": "index.js",
   "scripts": {
-  "clean": "powershell Remove-Item reports,evidence,test-results,dashboard,playwright-report,allure-results -Recurse -Force -ErrorAction SilentlyContinue",
-
-  "test": "playwright test",
-
-  "test:clean": "npm run clean && playwright test",
-
-  "test:headed": "playwright test --headed",
-
-  "test:ui": "playwright test --ui",
-
-  "test:debug": "playwright test --debug",
-
-  "report": "playwright show-report"
-},
+    "clean": "powershell Remove-Item reports,evidence,test-results,dashboard,playwright-report,allure-results -Recurse -Force -ErrorAction SilentlyContinue",
+    "test": "playwright test",
+    "test:framework": "playwright test tests/framework --workers=1",
+    "test:history": "playwright test tests/framework/history-manager.spec.js tests/framework/history-blockers.spec.js --workers=1",
+    "test:clean": "npm run clean && playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "test:debug": "playwright test --debug",
+    "report": "playwright show-report"
+  },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "type": "commonjs",
   "devDependencies": {
     "@playwright/test": "^1.60.0",

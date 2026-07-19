@@ -19,10 +19,10 @@ Automatically captures Playwright actions and transforms test execution into str
 
 <p align="center">
 
-![Version](https://img.shields.io/badge/version-v2.3.0--005-blue)
+![Version](https://img.shields.io/badge/version-v2.4.0--next.0-blue)
 ![Playwright](https://img.shields.io/badge/Playwright-supported-green)
 ![License](https://img.shields.io/badge/license-MIT-orange)
-![Node.js](https://img.shields.io/badge/node-%3E=18-brightgreen)
+![Node.js](https://img.shields.io/badge/node-%3E=20-brightgreen)
 
 </p>
 
@@ -69,6 +69,8 @@ npm test
 |   |-- HeynaReporter.js
 |   |-- HeynaPdfGenerator.js
 |   |-- HeynaHtmlDashboardGenerator.js
+|   |-- HistoryManager.js
+|   |-- ArtifactPaths.js
 |   |-- FailureClassifier.js
 |   |-- FailureGrouping.js
 |   |-- FailureSummaryEngine.js
@@ -76,6 +78,10 @@ npm test
 |-- dashboard/
 |-- evidence/
 |-- test-results/
+|-- history/
+|   |-- runs/
+|   |-- .temp/
+|   `-- latest.json
 |-- docs/
 |-- playwright.config.js
 |-- heyna.config.js
@@ -99,6 +105,7 @@ npm test
 - **API Logging** — Automatic Playwright API request/response capture
 - **Retry-Aware** — Per-test retry history preserved across attempts
 - **Parallel Execution** — Worker-safe reporting for concurrent test runs
+- **Durable Execution History (opt-in prerelease)** — Immutable, versioned run snapshots with atomic publication, retrieval, retention, and legacy migration. Disabled by default; review evidence privacy and retention before enabling it.
 
 ---
 
@@ -117,6 +124,7 @@ npm test
 | [Intelligent Failure Summary](docs/intelligent-failure-summary.md) | Failure analysis engine |
 | [Root Cause Analysis](docs/root-cause-analysis.md) | Cross-group analysis |
 | [Trace Intelligence](docs/trace-intelligence.md) | Playwright Trace integration |
+| [Execution History Storage](docs/history-storage.md) | Configuration, storage format, retrieval, retention, and migration |
 | [Roadmap](docs/roadmap.md) | Planned features |
 | [Release History](docs/release-history.md) | Version changelog |
 

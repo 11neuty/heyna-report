@@ -1,10 +1,10 @@
 {
-  "name": "project4",
+  "name": "heyna-report",
   "version": "2.4.0-next.0",
   "engines": {
     "node": ">=20"
   },
-  "description": "",
+  "description": "Durable Playwright execution reporting and evidence storage.",
   "main": "index.js",
   "scripts": {
     "clean": "powershell Remove-Item reports,evidence,test-results,dashboard,playwright-report,allure-results -Recurse -Force -ErrorAction SilentlyContinue",
@@ -19,7 +19,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "type": "commonjs",
   "devDependencies": {
     "@playwright/test": "^1.60.0",

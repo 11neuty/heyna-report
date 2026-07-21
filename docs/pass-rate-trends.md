@@ -2,6 +2,8 @@
 
 HEYNA REPORT `2.4.0-next.0` provides a read-only pass-rate trend layer over the public `HistoricalMetricsAggregator` API. It does not scan `history/runs`, read history JSON files, or modify persisted history.
 
+See the [pass-rate trends ADR](adr/pass-rate-trends.md) for the decision rationale and [Historical Metrics Aggregation](historical-metrics-aggregation.md) for the dependency contract.
+
 ## Construction and API
 
 ```js

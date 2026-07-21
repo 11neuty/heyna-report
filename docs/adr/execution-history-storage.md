@@ -5,6 +5,8 @@
 - Storage schema: 1.0.0
 - Development version: HEYNA REPORT 2.4.0-next.0; stable target: v2.4.0 milestone
 
+Public contract: [Execution History Storage](../history-storage.md)
+
 ## Context
 
 HEYNA REPORT previously retained only mutable current-run files and flat copies under `history/executions`. Direct writes, import-time paths, and a single teardown failure chain made those files unsuitable as a durable historical contract.

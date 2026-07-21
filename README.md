@@ -1,160 +1,75 @@
-﻿# HEYNA REPORT
+# HEYNA REPORT
 
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/8710e36e-e140-41c8-8a8e-38fdd207a9c9" alt="HEYNA REPORT Demo">
-</p>
+HEYNA REPORT is a CommonJS reporting framework for Playwright that turns test execution into PDF and static HTML reports, structured execution data, screenshots, failure indicators, and optional immutable history.
 
-<p align="center">
+> **Development status:** this branch reports version `2.4.0-next.0` for the unreleased v2.4.0 milestone. The latest stable Git tag is `v2.3.1`.
 
-**From Execution to Evidence.**
+## Requirements
 
-</p>
+- Node.js 20 or later
+- npm
 
-<p align="center">
-
-Zero-Boilerplate Playwright Reporting Framework
-Automatically captures Playwright actions and transforms test execution into structured evidence reports.
-
-</p>
-
-<p align="center">
-
-![Version](https://img.shields.io/badge/version-v2.4.0--next.0-blue)
-![Playwright](https://img.shields.io/badge/Playwright-supported-green)
-![License](https://img.shields.io/badge/license-MIT-orange)
-![Node.js](https://img.shields.io/badge/node-%3E=20-brightgreen)
-
-</p>
-
----
-
-## Quick Start
+## Get started
 
 ```bash
-# Clone
-git clone <repository-url>
+git clone https://github.com/11neuty/heyna-report.git
 cd heyna-report
-
-# Install
 npm install
 npx playwright install chromium
-
-# Run tests
 npm test
-
-# Open reports
-# PDF: reports/HeynaReport.pdf
-# HTML: dashboard/index.html
 ```
 
----
+The full suite uses the repository's Playwright configuration and generates the current-run report artifacts during global teardown.
 
-## Project Structure
+## Generated output
 
-```text
-.
-|-- assets/
-|   |-- heyna-logo.png
-|-- pages/
-|   |-- BasePage.js
-|   |-- LoginPage.js
-|-- examples/
-|   |-- playwright/
-|       |-- login.spec.js
-|-- tests/
-|   |-- framework/
-|       |-- auto-capture.spec.js
-|       |-- pdf-generator.spec.js
-|-- utils/
-|   |-- HeynaReporter.js
-|   |-- HeynaPdfGenerator.js
-|   |-- HeynaHtmlDashboardGenerator.js
-|   |-- HistoryManager.js
-|   |-- ArtifactPaths.js
-|   |-- FailureClassifier.js
-|   |-- FailureGrouping.js
-|   |-- FailureSummaryEngine.js
-|-- reports/
-|-- dashboard/
-|-- evidence/
-|-- test-results/
-|-- history/
-|   |-- runs/
-|   |-- .temp/
-|   `-- latest.json
-|-- docs/
-|-- playwright.config.js
-|-- heyna.config.js
-|-- heyna.global-teardown.js
-|-- regenerate-report.js
-|-- package.json
+Default output locations are:
+
+- `reports/HeynaReport.pdf` — primary PDF report
+- `reports/TestExecutionReport.pdf` — compatibility copy of the PDF report
+- `dashboard/index.html` — single-file static HTML dashboard
+- `test-results/execution.json` — per-test execution records
+- `test-results/metadata.json` — run metadata and auto-capture coverage
+- `evidence/<testCase>/` — screenshots and API logs
+
+Existing execution data can be rendered again with:
+
+```bash
+node regenerate-report.js
 ```
 
----
+## Verified capabilities
 
-## Features
-
-- **Auto Action Capture** — Native Playwright actions (fill, click, check, etc.) recorded automatically
-- **PDF Report** — Enterprise-style PDF with execution summary, test cases, failure analysis, evidence
-- **HTML Dashboard** — Interactive browser-based report with filtering, sorting, screenshot viewer
-- **Failure Classification** — Automated categorization of test failures (assertion, timeout, locator, etc.)
-- **Failure Grouping** — Clusters similar failures by root cause to reduce noise
-- **Intelligent Failure Summaries** — Human-readable analysis with health status and recommendations
-- **Root Cause Analysis** — Cross-group clustering with confidence scoring
-- **Trace Intelligence** — Playwright Trace Viewer integration for action enrichment
-- **API Logging** — Automatic Playwright API request/response capture
-- **Retry-Aware** — Per-test retry history preserved across attempts
-- **Parallel Execution** — Worker-safe reporting for concurrent test runs
-- **Durable Execution History (opt-in prerelease)** — Immutable, versioned run snapshots with atomic publication, retrieval, retention, and legacy migration. Disabled by default; review evidence privacy and retention before enabling it.
-- **Historical Metrics Aggregation** - Read-only normalized queries, exact three-decimal-millisecond rollups, truthful aggregation-only exclusions, and UTC grouping over backward-compatible schema `1.0.0` run summaries.
-- **Pass Rate Trends** - Chronological run and UTC bucket series with weighted changes, deterministic direction, moving weighted rates, and explicit data-quality warnings.
-
----
+- Automatic capture of supported Playwright page, locator, keyboard, and mouse actions
+- Configurable screenshot capture and per-test evidence
+- PDF and static HTML reporting
+- Failure classification, signature grouping, summary indicators, and deterministic root-cause classifications
+- Trace-file availability, path, and size reporting
+- Retry-aware execution records and isolated framework-test artifacts
+- Opt-in immutable execution history with retention and migration support
+- Read-only historical metrics aggregation
+- Weighted pass-rate trend analysis
 
 ## Documentation
 
-| Guide | Description |
-|-------|-------------|
-| [Getting Started](docs/getting-started.md) | First run walkthrough and core concepts |
-| [Installation](docs/installation.md) | Full installation guide |
-| [Quick Start](docs/quick-start.md) | 5-minute quick start |
-| [Sample Project](docs/sample-project.md) | Complete example with Page Object Model |
-| [Auto Action Capture](docs/auto-action-capture.md) | Auto capture reference |
-| [HTML Dashboard](docs/html-dashboard.md) | Dashboard features and usage |
-| [Failure Classification](docs/failure-classification.md) | Failure category reference |
-| [Failure Grouping](docs/failure-grouping.md) | Root cause clustering |
-| [Intelligent Failure Summary](docs/intelligent-failure-summary.md) | Failure analysis engine |
-| [Root Cause Analysis](docs/root-cause-analysis.md) | Cross-group analysis |
-| [Trace Intelligence](docs/trace-intelligence.md) | Playwright Trace integration |
-| [Execution History Storage](docs/history-storage.md) | Configuration, storage format, retrieval, retention, and migration |
-| [Historical Metrics Aggregation](docs/historical-metrics-aggregation.md) | Query filters, metric semantics, grouping, and warnings |
-| [Pass Rate Trends](docs/pass-rate-trends.md) | Weighted pass-rate series, changes, classification, moving rates, and warnings |
-| [Roadmap](docs/roadmap.md) | Planned features |
-| [Release History](docs/release-history.md) | Version changelog |
+- [Getting started](docs/getting-started.md)
+- [Configuration](docs/configuration.md)
+- [Reporting and failure indicators](docs/reporting.md)
+- [Auto Action Capture](docs/auto-action-capture.md)
+- [Execution history storage](docs/history-storage.md)
+- [Historical metrics aggregation](docs/historical-metrics-aggregation.md)
+- [Pass-rate trends](docs/pass-rate-trends.md)
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)
 
----
+## CI
 
-## Quick Example
+The checked-in [GitHub Actions workflow](.github/workflows/heyna-report.yml) installs Node 20 and Chromium, runs the test suite, regenerates reports, and uploads report artifacts.
 
-```javascript
-// Native Playwright code
-await page.fill('#username', 'admin');
-await page.fill('#password', 'secret');
-await page.click('#login');
-```
+## Privacy and retention
 
-Automatically generates: Fill Username, Fill Password, Click Login — no manual reporting code needed.
-
-See [`examples/playwright/login.spec.js`](examples/playwright/login.spec.js) for a complete working example.
-
----
-
-## CI/CD
-
-See [`.github/workflows/heyna-report.yml`](.github/workflows/heyna-report.yml) for GitHub Actions integration.
-
----
+Screenshots, traces, API logs, execution data, and retained history may contain credentials, page content, network details, or personal data. History is disabled by default. Review [history configuration and retention](docs/history-storage.md) before enabling it, and apply appropriate CI artifact retention and access controls.
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+HEYNA REPORT is available under the [MIT License](LICENSE).

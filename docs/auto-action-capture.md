@@ -1,6 +1,6 @@
 # Auto Action Capture
 
-Version: HEYNA REPORT v2.1.0
+Auto Action Capture was introduced in v2.1.0 and remains part of the current development version.
 
 Auto Action Capture allows QA engineers to write native Playwright code while HEYNA REPORT automatically records execution steps.
 
@@ -79,6 +79,8 @@ Click Login
 ```
 
 ## Configuration
+
+HEYNA REPORT loads these settings from `heyna.config.js`. See [Configuration](configuration.md) for configuration precedence, output roots, evidence, and history settings.
 
 ```js
 module.exports = {

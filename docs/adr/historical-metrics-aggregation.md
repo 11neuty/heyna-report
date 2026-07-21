@@ -5,6 +5,8 @@
 - Aggregation schema: 1.0.0
 - Supported history schema: 1.0.0
 
+Public contract: [Historical Metrics Aggregation](../historical-metrics-aggregation.md)
+
 ## Context
 
 Future historical trend, comparison, dashboard, and quality-report features need consistent selection and rollup semantics. Allowing each feature to enumerate immutable run directories would duplicate filesystem access, corruption handling, date logic, and metric formulas. Existing `HistoryManager.listRuns()` intentionally logs and skips corrupt summaries, but an analytics result must disclose every excluded run to avoid silently partial metrics.

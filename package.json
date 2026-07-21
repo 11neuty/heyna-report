@@ -10,7 +10,7 @@
     "clean": "powershell Remove-Item reports,evidence,test-results,dashboard,playwright-report,allure-results -Recurse -Force -ErrorAction SilentlyContinue",
     "test": "playwright test",
     "test:framework": "playwright test tests/framework --workers=1",
-    "test:history": "playwright test tests/framework/history-manager.spec.js tests/framework/history-blockers.spec.js --workers=1",
+    "test:history": "playwright test tests/framework/history-manager.spec.js tests/framework/history-blockers.spec.js tests/framework/historical-metrics-aggregator.spec.js --workers=1",
     "test:clean": "npm run clean && playwright test",
     "test:headed": "playwright test --headed",
     "test:ui": "playwright test --ui",

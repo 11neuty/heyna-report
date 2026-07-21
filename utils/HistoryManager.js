@@ -4,6 +4,11 @@ const crypto = require('crypto');
 const { mergeHistoryConfig, resolveArtifactPaths } = require('./ArtifactPaths');
 const { ensureDir, readJson, atomicWriteJson } = require('./JsonFile');
 const {
+    durationFromUnits,
+    safeAddDurationUnits
+} = require('./HistoricalMetricsValidation');
+const {
+    SUPPORTED_SCHEMA_VERSIONS,
     aggregateSize,
     fileChecksum,
     validateFinalStatuses,
@@ -65,6 +70,55 @@ function warning(code, error, extra = {}) {
     return { code, message: error.message, ...extra };
 }
 
+const SAFE_HISTORY_IO_CODES = new Set(['ENOENT', 'EACCES', 'EPERM', 'EIO', 'EISDIR', 'ENOTDIR']);
+const SAFE_NATIVE_ERROR_CODE = /^[A-Z][A-Z0-9_]{0,31}$/;
+const SAFE_VERSION_TOKEN = /^\d{1,6}\.\d{1,6}\.\d{1,6}(?:-[0-9A-Za-z.-]{1,32})?$/;
+const SAFE_DIAGNOSTIC_FIELD = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
+
+function publicVersionToken(value) {
+    return typeof value === 'string' && value.length <= 64 && SAFE_VERSION_TOKEN.test(value)
+        ? value
+        : 'invalid-version-token';
+}
+
+function historyDiagnostic(code, message, runId, options = {}) {
+    const details = {};
+    const sourceDetails = options.details && typeof options.details === 'object' ? options.details : {};
+    if (sourceDetails.file === 'summary.json') details.file = 'summary.json';
+    if (Object.prototype.hasOwnProperty.call(sourceDetails, 'schemaVersion')) {
+        details.schemaVersion = publicVersionToken(sourceDetails.schemaVersion);
+    }
+    if (SAFE_HISTORY_IO_CODES.has(sourceDetails.errorCode) || sourceDetails.errorCode === 'UNKNOWN') {
+        details.errorCode = sourceDetails.errorCode;
+    }
+    return {
+        code,
+        severity: 'warning',
+        message,
+        runId: typeof runId === 'string' && RUN_ID_PATTERN.test(runId) ? runId : null,
+        field: typeof options.field === 'string' && SAFE_DIAGNOSTIC_FIELD.test(options.field) ? options.field : null,
+        details
+    };
+}
+
+function stableIoCode(error) {
+    return error && SAFE_HISTORY_IO_CODES.has(error.code) ? error.code : 'UNKNOWN';
+}
+
+function fatalIoCode(error) {
+    return error && typeof error.code === 'string' && SAFE_NATIVE_ERROR_CODE.test(error.code)
+        ? error.code
+        : 'UNKNOWN';
+}
+
+function historyEnumerationError(error) {
+    const originalCode = fatalIoCode(error);
+    const wrapped = new Error(`Could not enumerate completed history runs (${originalCode}).`, { cause: error });
+    wrapped.code = originalCode;
+    wrapped.heynaCode = 'HEYNA_HISTORY_ENUMERATION_FAILED';
+    return wrapped;
+}
+
 function countFiles(target, fileSystem = fs) {
     const stat = fileSystem.statSync(target);
     if (stat.isFile()) return 1;
@@ -124,7 +178,16 @@ class HistoryManager {
         const failed = count('FAILED');
         const timedOut = count('TIMEDOUT');
         const interrupted = count('INTERRUPTED');
-        const totalDuration = durations.reduce((sum, value) => sum + value, 0);
+        let totalDuration;
+        if (migration !== undefined) {
+            totalDuration = durations.reduce((sum, value) => sum + value, 0);
+        } else {
+            let totalDurationUnits = 0n;
+            durations.forEach((duration, index) => {
+                totalDurationUnits = safeAddDurationUnits(totalDurationUnits, duration, `execution item ${index} duration`);
+            });
+            totalDuration = durationFromUnits(totalDurationUnits, 'history summary total duration');
+        }
         const failureCategoryCounts = {};
 
         execution.forEach(testCase => {
@@ -350,18 +413,132 @@ class HistoryManager {
     }
 
     scanValidSummaries() {
-        if (!this.fs.existsSync(this.paths.historyRunsDir)) return [];
+        return this.scanRunSummariesWithDiagnostics().runs;
+    }
+
+    scanRunSummariesWithDiagnostics() {
+        let entries;
+        try {
+            entries = this.fs.readdirSync(this.paths.historyRunsDir, { withFileTypes: true })
+                .filter(entry => entry.isDirectory());
+        } catch (error) {
+            if (error && error.code === 'ENOENT') {
+                return {
+                    runs: [],
+                    discoveredRunCount: 0,
+                    validRunCount: 0,
+                    excludedRunCount: 0,
+                    diagnostics: []
+                };
+            }
+            throw historyEnumerationError(error);
+        }
+
+        entries.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
         const summaries = [];
-        this.fs.readdirSync(this.paths.historyRunsDir, { withFileTypes: true })
-            .filter(entry => entry.isDirectory())
-            .forEach(entry => {
-                try {
-                    summaries.push(this.readCompletedSummary(entry.name));
-                } catch (error) {
-                    this.logger.error(`[HEYNA HISTORY] Skipping corrupt completed run ${entry.name}: ${error.message}`);
+        const diagnostics = [];
+
+        entries.forEach(entry => {
+            const runId = entry.name;
+            const summaryFile = path.join(this.paths.historyRunsDir, runId, 'summary.json');
+            let summary;
+
+            try {
+                this.validateRunId(runId);
+            } catch (error) {
+                diagnostics.push(historyDiagnostic(
+                    'HEYNA_HISTORICAL_INVALID_SUMMARY',
+                    'Completed history run directory has an invalid run ID.',
+                    runId,
+                    { field: 'runId', details: { file: 'summary.json' } }
+                ));
+                return;
+            }
+
+            try {
+                summary = this.fs.readFileSync(summaryFile, 'utf8');
+            } catch (error) {
+                const errorCode = stableIoCode(error);
+                if (errorCode === 'ENOENT') {
+                    diagnostics.push(historyDiagnostic(
+                        'HEYNA_HISTORICAL_MISSING_SUMMARY',
+                        'Completed history run is missing summary.json.',
+                        runId,
+                        { details: { file: 'summary.json', errorCode } }
+                    ));
+                } else {
+                    diagnostics.push(historyDiagnostic(
+                        'HEYNA_HISTORICAL_UNREADABLE_RUN',
+                        'Completed history run summary.json could not be read.',
+                        runId,
+                        { details: { file: 'summary.json', errorCode } }
+                    ));
                 }
-            });
-        return summaries.sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp) || b.runId.localeCompare(a.runId));
+                return;
+            }
+            try {
+                summary = JSON.parse(summary);
+            } catch (error) {
+                diagnostics.push(historyDiagnostic(
+                    'HEYNA_HISTORICAL_CORRUPT_SUMMARY',
+                    'Completed history run contains corrupt summary.json.',
+                    runId,
+                    { details: { file: 'summary.json' } }
+                ));
+                return;
+            }
+
+            if (summary
+                && typeof summary === 'object'
+                && typeof summary.schemaVersion === 'string'
+                && !SUPPORTED_SCHEMA_VERSIONS.includes(summary.schemaVersion)) {
+                diagnostics.push(historyDiagnostic(
+                    'HEYNA_HISTORICAL_UNSUPPORTED_SCHEMA',
+                    'Completed history run uses an unsupported summary schema.',
+                    runId,
+                    { field: 'schemaVersion', details: { schemaVersion: summary.schemaVersion } }
+                ));
+                return;
+            }
+
+            try {
+                summaries.push(validateSummary(summary, { expectedRunId: runId }));
+            } catch (error) {
+                diagnostics.push(historyDiagnostic(
+                    'HEYNA_HISTORICAL_INVALID_SUMMARY',
+                    'Completed history run contains an invalid summary.',
+                    runId,
+                    { details: { file: 'summary.json' } }
+                ));
+            }
+        });
+
+        diagnostics.forEach(diagnostic => {
+            this.logger.error(`[HEYNA HISTORY] Skipping completed run ${diagnostic.runId}: ${diagnostic.message}`);
+        });
+        summaries.sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp) || b.runId.localeCompare(a.runId));
+
+        return {
+            runs: summaries,
+            discoveredRunCount: entries.length,
+            validRunCount: summaries.length,
+            excludedRunCount: diagnostics.length,
+            diagnostics
+        };
+    }
+
+    async listRunsWithDiagnostics() {
+        const result = this.scanRunSummariesWithDiagnostics();
+        return {
+            runs: result.runs.slice(),
+            discoveredRunCount: result.discoveredRunCount,
+            validRunCount: result.validRunCount,
+            excludedRunCount: result.excludedRunCount,
+            diagnostics: result.diagnostics.map(diagnostic => ({
+                ...diagnostic,
+                details: { ...diagnostic.details }
+            }))
+        };
     }
 
     async listRuns(options = {}) {

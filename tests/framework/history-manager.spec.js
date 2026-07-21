@@ -3,9 +3,11 @@ const os = require('os');
 const path = require('path');
 const { test, expect } = require('@playwright/test');
 const HistoryManager = require('../../utils/HistoryManager');
+const HistoricalMetricsAggregator = require('../../utils/HistoricalMetricsAggregator');
 const Heyna = require('../../utils/HeynaReporter');
 const { mergeHistoryConfig, resolveArtifactPaths } = require('../../utils/ArtifactPaths');
 const { atomicWriteJson } = require('../../utils/JsonFile');
+const { validateSummary } = require('../../utils/HistoryValidation');
 const { runTeardown } = require('../../heyna.global-teardown');
 
 const temporaryRoots = new Set();
@@ -255,6 +257,66 @@ test('legacy migration is idempotent and malformed sources are preserved', async
     expect(fs.existsSync(path.join(manager.paths.legacyExecutionsDir, 'broken.json'))).toBe(true);
 });
 
+
+test('schema 1.0.0 legacy numeric summaries remain readable but are excluded from aggregation', async () => {
+    const manager = managerFor(temporaryRoot());
+    await manager.initialize();
+    const persisted = await manager.persistRun({ execution: execution(), metadata: metadata() });
+    const unsafeCount = Number.MAX_SAFE_INTEGER + 1;
+    const legacy = {
+        ...persisted.summary,
+        total: unsafeCount,
+        passed: unsafeCount,
+        failed: 0,
+        skipped: 0,
+        timedOut: 0,
+        interrupted: 0,
+        unsuccessful: 0,
+        passRate: 100,
+        totalDuration: Number.MAX_VALUE,
+        averageDuration: Number.MAX_VALUE
+    };
+    atomicWriteJson(path.join(manager.paths.historyRunsDir, persisted.runId, 'summary.json'), legacy);
+
+    expect(validateSummary({ ...legacy, totalDuration: -0, averageDuration: -0 }).totalDuration).toBe(-0);
+    expect(await manager.getRunSummary(persisted.runId)).toMatchObject({ total: unsafeCount, totalDuration: Number.MAX_VALUE });
+    expect((await manager.listRuns()).map(item => item.runId)).toEqual([persisted.runId]);
+    const diagnosticListing = await manager.listRunsWithDiagnostics();
+    expect(diagnosticListing).toMatchObject({ discoveredRunCount: 1, validRunCount: 1, excludedRunCount: 0, diagnostics: [] });
+
+    const aggregate = await new HistoricalMetricsAggregator({
+        historyManager: manager,
+        clock: () => new Date('2026-07-20T00:00:00.000Z')
+    }).aggregate();
+    expect(aggregate.source).toEqual({
+        discoveredRunCount: 1,
+        validRunCount: 1,
+        excludedRunCount: 0,
+        aggregationExcludedRunCount: 1,
+        matchedRunCount: 0,
+        selectedRunCount: 0
+    });
+    expect(aggregate.warnings.map(item => item.code)).toContain('HEYNA_HISTORICAL_AGGREGATION_UNUSABLE_SUMMARY');
+});
+
+test('legacy migration keeps schema 1.0.0 readable when its duration exceeds aggregation range', async () => {
+    const manager = managerFor(temporaryRoot(), { migration: { enabled: true } });
+    fs.mkdirSync(manager.paths.legacyExecutionsDir, { recursive: true });
+    fs.writeFileSync(path.join(manager.paths.legacyExecutionsDir, 'legacy-large.json'), JSON.stringify({
+        execution: execution('PASSED', Number.MAX_VALUE),
+        metadata: metadata()
+    }));
+    const initialized = await manager.initialize();
+    expect(initialized.migrated).toHaveLength(1);
+    expect(initialized.migrated[0].migrated).toBe(true);
+    const listing = await manager.listRunsWithDiagnostics();
+    expect(listing).toMatchObject({ discoveredRunCount: 1, validRunCount: 1, excludedRunCount: 0, diagnostics: [] });
+    expect(listing.runs[0]).toMatchObject({ schemaVersion: '1.0.0', totalDuration: Number.MAX_VALUE });
+    const aggregate = await new HistoricalMetricsAggregator({ historyManager: manager }).aggregate();
+    expect(aggregate.source.aggregationExcludedRunCount).toBe(1);
+    expect(aggregate.runCount).toBe(0);
+});
+
 test('date-range queries and limits use summaries in deterministic order', async () => {
     const manager = managerFor(temporaryRoot());
     await manager.initialize();
@@ -262,6 +324,76 @@ test('date-range queries and limits use summaries in deterministic order', async
     const range = await manager.queryRunsByDateRange('2026-07-01T23:59:59Z', '2026-07-03T00:00:00Z');
     expect(range.length).toBe(1);
     expect((await manager.listRuns({ limit: 2, newestFirst: false })).length).toBe(2);
+});
+
+test('diagnostic run listing distinguishes missing, corrupt, unsupported, and invalid summaries', async () => {
+    const root = temporaryRoot();
+    const manager = managerFor(root);
+    await manager.initialize();
+    const valid = await manager.persistRun({ execution: execution(), metadata: metadata() });
+    const cases = [
+        ['20260701-110000-000-aaaaaaaa', 'missing'],
+        ['20260701-110001-000-bbbbbbbb', 'corrupt'],
+        ['20260701-110002-000-cccccccc', 'unsupported'],
+        ['20260701-110003-000-dddddddd', 'invalid']
+    ];
+
+    for (const [runId, kind] of cases) {
+        const directory = path.join(manager.paths.historyRunsDir, runId);
+        fs.mkdirSync(directory, { recursive: true });
+        if (kind === 'corrupt') fs.writeFileSync(path.join(directory, 'summary.json'), '{ broken');
+        if (kind === 'unsupported') atomicWriteJson(path.join(directory, 'summary.json'), {
+            ...valid.summary,
+            runId,
+            schemaVersion: '2.0.0'
+        });
+        if (kind === 'invalid') atomicWriteJson(path.join(directory, 'summary.json'), {
+            ...valid.summary,
+            runId,
+            total: valid.summary.total + 1
+        });
+    }
+
+    const result = await manager.listRunsWithDiagnostics();
+    expect(result.runs.map(run => run.runId)).toEqual([valid.runId]);
+    expect(result).toMatchObject({ discoveredRunCount: 5, validRunCount: 1, excludedRunCount: 4 });
+    expect(result.diagnostics.map(item => item.code).sort()).toEqual([
+        'HEYNA_HISTORICAL_CORRUPT_SUMMARY',
+        'HEYNA_HISTORICAL_INVALID_SUMMARY',
+        'HEYNA_HISTORICAL_MISSING_SUMMARY',
+        'HEYNA_HISTORICAL_UNSUPPORTED_SCHEMA'
+    ]);
+    expect(() => JSON.stringify(result)).not.toThrow();
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain(root);
+    expect(serialized).not.toMatch(/[A-Za-z]:\\|\/home\//);
+    expect(await manager.listRuns()).toEqual([valid.summary]);
+});
+
+test('diagnostic run listing distinguishes an unreadable completed run', async () => {
+    const root = temporaryRoot();
+    const base = managerFor(root);
+    const runId = '20260701-110004-000-eeeeeeee';
+    const summaryFile = path.join(base.paths.historyRunsDir, runId, 'summary.json');
+    fs.mkdirSync(path.dirname(summaryFile), { recursive: true });
+    fs.writeFileSync(summaryFile, '{}');
+    const injected = Object.assign(Object.create(fs), {
+        readFileSync(file, ...args) {
+            if (file === summaryFile) {
+                const error = new Error('access denied C:\\Users\\someone\\private\\history\\runs\\x\\summary.json /home/runner/work/private/history/runs/x/summary.json');
+                error.code = 'EACCES';
+                throw error;
+            }
+            return fs.readFileSync(file, ...args);
+        }
+    });
+    const result = await managerFor(root, {}, { fileSystem: injected }).listRunsWithDiagnostics();
+    expect(result).toMatchObject({ discoveredRunCount: 1, validRunCount: 0, excludedRunCount: 1 });
+    expect(result.diagnostics[0]).toMatchObject({ code: 'HEYNA_HISTORICAL_UNREADABLE_RUN', severity: 'warning', runId });
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain('C:\\Users\\someone\\private');
+    expect(serialized).not.toContain('/home/runner/work/private');
+    expect(result.diagnostics[0].details).toEqual({ file: 'summary.json', errorCode: 'EACCES' });
 });
 
 test('latest pointer is portable JSON and resolves the latest run', async () => {
@@ -316,4 +448,95 @@ test('completeRun always removes the run lock', () => {
     expect(fs.existsSync(Heyna.getPaths().runLockFile)).toBe(true);
     Heyna.completeRun();
     expect(fs.existsSync(Heyna.getPaths().runLockFile)).toBe(false);
+});
+
+test('missing history root is empty for both listing APIs', async () => {
+    const manager = managerFor(temporaryRoot());
+    expect(fs.existsSync(manager.paths.historyRunsDir)).toBe(false);
+    expect(await manager.listRuns()).toEqual([]);
+    expect(await manager.listRunsWithDiagnostics()).toEqual({
+        runs: [],
+        discoveredRunCount: 0,
+        validRunCount: 0,
+        excludedRunCount: 0,
+        diagnostics: []
+    });
+});
+
+
+test('unsupported schema diagnostics redact path-shaped version values', async () => {
+    for (const unsafeVersion of ['C:\\Users\\someone\\private\\summary.json', '/home/runner/work/private/summary.json']) {
+        const manager = managerFor(temporaryRoot());
+        const runId = '20260701-120000-000-aaaaaaaa';
+        const directory = path.join(manager.paths.historyRunsDir, runId);
+        fs.mkdirSync(directory, { recursive: true });
+        fs.writeFileSync(path.join(directory, 'summary.json'), JSON.stringify({ schemaVersion: unsafeVersion }));
+        const result = await manager.listRunsWithDiagnostics();
+        expect(result).toMatchObject({ discoveredRunCount: 1, validRunCount: 0, excludedRunCount: 1 });
+        expect(result.diagnostics[0]).toEqual({
+            code: 'HEYNA_HISTORICAL_UNSUPPORTED_SCHEMA',
+            severity: 'warning',
+            message: 'Completed history run uses an unsupported summary schema.',
+            runId,
+            field: 'schemaVersion',
+            details: { schemaVersion: 'invalid-version-token' }
+        });
+        expect(JSON.stringify(result)).not.toContain(unsafeVersion);
+    }
+});
+
+test('existing list and retention APIs retain large finite integer compatibility', async () => {
+    const hugeInteger = Number.MAX_SAFE_INTEGER + 1;
+    const root = temporaryRoot();
+    const manager = managerFor(root, { retention: { enabled: true, maxRuns: hugeInteger, maxAgeDays: null } });
+    await manager.initialize();
+    const persisted = await manager.persistRun({ execution: execution(), metadata: metadata() });
+    expect((await manager.listRuns({ limit: hugeInteger })).map(item => item.runId)).toEqual([persisted.runId]);
+    const retention = await manager.enforceRetention();
+    expect(retention).toMatchObject({ deletedRunIds: [], skippedCorruptRunIds: [] });
+    expect((await manager.listRuns()).map(item => item.runId)).toEqual([persisted.runId]);
+});
+
+test('root enumeration failures preserve safe native codes and sanitize malformed codes', async () => {
+    const cases = [
+        ['EACCES', 'EACCES'],
+        ['EPERM', 'EPERM'],
+        ['EIO', 'EIO'],
+        ['EMFILE', 'EMFILE'],
+        ['ENFILE', 'ENFILE'],
+        ['ENOSPC', 'ENOSPC'],
+        ['UNEXPECTED', 'UNEXPECTED'],
+        ['C:\\Users\\someone\\private', 'UNKNOWN'],
+        [undefined, 'UNKNOWN']
+    ];
+    for (const [suppliedCode, expectedCode] of cases) {
+        const root = temporaryRoot();
+        const base = managerFor(root);
+        const privateWindowsPath = 'C:\\Users\\someone\\private\\history\\runs';
+        const privatePosixPath = '/home/runner/work/private/history/runs';
+        const injected = Object.assign(Object.create(fs), {
+            readdirSync(target, ...args) {
+                if (target === base.paths.historyRunsDir) {
+                    const error = new Error(`cannot enumerate ${privateWindowsPath} ${privatePosixPath}`);
+                    if (suppliedCode !== undefined) error.code = suppliedCode;
+                    throw error;
+                }
+                return fs.readdirSync(target, ...args);
+            }
+        });
+        const manager = managerFor(root, {}, { fileSystem: injected });
+        for (const operation of [() => manager.listRuns(), () => manager.listRunsWithDiagnostics()]) {
+            try {
+                await operation();
+                throw new Error('Expected history enumeration to fail.');
+            } catch (error) {
+                expect(error.code).toBe(expectedCode);
+                expect(error.heynaCode).toBe('HEYNA_HISTORY_ENUMERATION_FAILED');
+                expect(error.cause).toBeTruthy();
+                expect(error.message).toBe(`Could not enumerate completed history runs (${expectedCode}).`);
+                expect(error.message).not.toContain(privateWindowsPath);
+                expect(error.message).not.toContain(privatePosixPath);
+            }
+        }
+    }
 });

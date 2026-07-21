@@ -39,7 +39,7 @@ Partial top-level and nested configuration is deeply merged with the single defa
 
 A run ID has the filesystem-safe form `YYYYMMDD-HHmmss-SSS-random`. Writers coordinate through owner-scoped claims under `history/.history.lock/claims/<pid>-<ownerToken>`. Every acquisition uses a new 96-bit random token whose path is never reused by another owner. Atomic directory creation publishes the claim identity, after which the owner writes immutable owner and Lamport-style ticket files. Missing or partially written tickets represent the bakery algorithm's choosing phase. The lowest `(ticket, token)` tuple enters the protected section; a later contender observes an existing ticket and takes a larger number, while concurrent equal tickets are ordered by token.
 
-Acquisition makes the initial eligibility check plus at most `maxRetries` additional checks, waiting `retryDelayMs` between blocked checks. `maxRetries` must be a finite non-negative integer; `retryDelayMs` and `staleMs` must be finite non-negative numbers. A live owner claim is protected regardless of age. Released claims, dead-process claims, and malformed expired claims are recoverable. Recovery removes only the stale owner's never-reused token directory; it never compares and deletes a shared replaceable active-lock path. A new live owner therefore has a different path and cannot be deleted by stale recovery. The owner removes only its own claim in `finally`.
+Acquisition makes the initial eligibility check plus at most `maxRetries` additional checks, waiting `retryDelayMs` between blocked checks. `maxRetries` must be a safe non-negative integer; `retryDelayMs` and `staleMs` must be finite non-negative numbers. A live owner claim is protected regardless of age. Released claims, dead-process claims, and malformed expired claims are recoverable. Recovery removes only the stale owner's never-reused token directory; it never compares and deletes a shared replaceable active-lock path. A new live owner therefore has a different path and cannot be deleted by stale recovery. The owner removes only its own claim in `finally`.
 
 Atomic directory creation publishes a claim whose name encodes its PID and random token. That identity protects a live claim even if the process stops before completing `owner.json` or `ticket.json`; readers treat incomplete live state as the choosing phase. Once the process dies, the same unique directory becomes recoverable. Recovery does not create a shared quarantine or recovery-owner artifact, so a recovery-process crash leaves the original token-scoped claim recoverable by the next process.
 
@@ -74,7 +74,7 @@ total = passed + failed + skipped + timedOut + interrupted
 unsuccessful = failed + timedOut + interrupted
 ```
 
-`failed` remains canonical `FAILED` only. Skipped tests are not unsuccessful. `passRate` is the numeric percentage `passed / total * 100`, with zero used for an empty run. Durations are finite non-negative milliseconds. Timestamps are accepted as ISO-8601 timestamps and normalized to UTC before storage; `endTime` cannot precede `startTime`.
+`failed` remains canonical `FAILED` only. Skipped tests are not unsuccessful. `passRate` is the numeric percentage `passed / total * 100`, with zero used for an empty run. Durations are finite non-negative milliseconds. Schema `1.0.0` keeps this original reader contract, including finite integer counts and finite durations that may be outside the stricter metrics-aggregation range; aggregation validation is separate and never rewrites stored summaries. Timestamps are accepted as ISO-8601 timestamps and normalized to UTC before storage; `endTime` cannot precede `startTime`.
 
 `traceReportedCount` counts execution records that reported a trace. `tracePreservedCount` counts trace files actually copied into the completed run. The compatibility field `traceAvailableCount` equals `tracePreservedCount` and never claims a missing source was preserved.
 
@@ -109,6 +109,7 @@ const history = new HistoryManager();
 await history.initialize();
 const persisted = await history.persistRun();
 const runs = await history.listRuns({ limit: 10 });
+const diagnosticRuns = await history.listRunsWithDiagnostics();
 const latest = await history.getLatestRun();
 await history.repairLatestPointer();
 const inclusiveRange = await history.queryRunsByDateRange(
@@ -117,4 +118,10 @@ const inclusiveRange = await history.queryRunsByDateRange(
 );
 ```
 
-This feature stores immutable runs. Historical aggregation, trends, comparisons, dashboards, databases, HTTP endpoints, and module-system migrations remain out of scope.
+`listRunsWithDiagnostics()` preserves the summary-only read boundary while reporting completed directories that cannot be used. It is always a complete, newest-first, unfiltered scan; filtering and limits belong to `HistoricalMetricsAggregator`, while the existing `listRuns()` retains its selection options. The diagnostic result returns `runs`, `discoveredRunCount`, `validRunCount`, `excludedRunCount`, and JSON-safe diagnostics that distinguish missing summary files, corrupt JSON, unsupported schemas, invalid summary contracts, and unreadable runs. Its invariants are `discoveredRunCount === validRunCount + excludedRunCount`, `runs.length === validRunCount`, and `diagnostics.length === excludedRunCount`. Diagnostics contain stable messages, relative `summary.json` references, and whitelisted I/O codes rather than native error text or absolute paths. A missing history root returns an empty list; any other root enumeration failure throws with its native code preserved, `heynaCode: 'HEYNA_HISTORY_ENUMERATION_FAILED'`, and the original error as `cause`. Existing `listRuns()` normal-path behavior, return type, finite non-negative integer limit compatibility, and retention `maxRuns` compatibility are unchanged.
+
+New summary writes accumulate each canonical duration as exact thousandth-millisecond `BigInt` units before converting the total back to a public number. The stored schema remains `1.0.0`; its reader still accepts the original finite non-negative numeric contract. Historical floating-point totals are not rewritten or classified as corrupt. The aggregation layer may recognize and explicitly normalize the narrow old-writer artifact signature, accompanied by `HEYNA_HISTORICAL_DURATION_NORMALIZED`.
+
+Historical metrics consumers should use `HistoricalMetricsAggregator` rather than scanning `history/runs` or averaging stored derived values. See `docs/historical-metrics-aggregation.md`.
+
+This storage component stores immutable runs and does not aggregate them itself. The separate `HistoricalMetricsAggregator` provides summary-only factual aggregation; trends, comparisons, dashboards, databases, HTTP endpoints, and module-system migrations remain out of scope.

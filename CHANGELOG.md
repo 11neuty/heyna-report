@@ -1,189 +1,65 @@
-﻿# Changelog
+# Changelog
 
-All notable changes to HEYNA REPORT will be documented in this file.
+Notable HEYNA REPORT changes are recorded here in reverse chronological order. Released headings correspond to Git tags; development milestones are described only under **Unreleased**.
 
-## Unreleased — v2.4.0-next.0
+## Unreleased — 2.4.0-next.0
 
-This is an unreleased development version for the GitHub v2.4.0 milestone. The stable `v2.4.0` tag will be created only after the full milestone is complete. v2.3.1 remains the latest stable release.
+Development work for the v2.4.0 milestone. No stable `v2.4.0` tag exists.
 
 ### Added
 
-- Versioned immutable execution history under `history/runs/<runId>`.
-- Atomic temporary-run publication and portable `history/latest.json` pointer.
-- CommonJS `HistoryManager` APIs for run retrieval, date-range queries, retention, recovery, and safe legacy migration.
-- Independently versioned summary, schema, and artifact manifest documents.
-- Runtime artifact-root resolution for isolated framework tests and embedded consumers.
-- Read-only historical metrics aggregation with normalized run queries, weighted and average-run rates, duration rollups, and UTC time buckets.
-- Structured summary diagnostics for corrupt, unsupported, invalid, missing, and unreadable completed runs.
-- Strict timestamps with zero to three fractional digits; exact `BigInt` thousandth-millisecond duration aggregation; backward-compatible schema `1.0.0` reading; sanitized diagnostics; preserved fatal native I/O codes; aggregation-only exclusion counters; and truncation-only limit warnings.
-- Read-only pass-rate trends with run/day/week/month series, weighted first/latest and previous/latest changes, configurable stable classification, checked moving weighted rates, and propagated historical data-quality warnings.
+- Opt-in immutable execution history with atomic publication, latest-pointer recovery, retention, migration, and artifact manifests.
+- Summary diagnostics that distinguish missing, corrupt, invalid, unsupported, and unreadable historical runs.
+- Read-only historical metric queries and aggregation with weighted pass rates, exact fixed-scale duration arithmetic, UTC grouping, and partial-result warnings.
+- Read-only run/day/week/month pass-rate trends with chronological series, explicit comparisons, deterministic classification, moving weighted rates, and propagated data-quality warnings.
+- Isolated project and artifact roots for framework tests and embedded consumers.
 
 ### Changed
 
-- Teardown now attempts PDF, HTML, and history stages independently and always removes the run lock.
-- Reporter JSON writes are atomic and corrupt existing JSON is reported instead of silently replaced.
-- `TIMEDOUT` and `INTERRUPTED` remain distinct canonical statuses.
-- Package metadata now identifies the unreleased `heyna-report` v2.4.0-next.0 development version under the repository's MIT license.
+- Global teardown attempts PDF, HTML, and history stages independently and always releases the current-run lock.
+- Current-run JSON writes are atomic and report corrupt existing data instead of silently replacing it.
+- `TIMEDOUT` and `INTERRUPTED` remain distinct canonical statuses; `unsuccessful` is `failed + timedOut + interrupted`.
+- Package metadata identifies the CommonJS development version as `heyna-report@2.4.0-next.0` with Node 20 or later required.
 
 ### Compatibility
 
-- Current-run files and report locations are unchanged.
-- `failed` counts only canonical `FAILED` results; `timedOut` and `interrupted` are separate. The explicit `unsuccessful` metric is `failed + timedOut + interrupted`.
-- Retention remains disabled by default.
+- Existing current-run JSON, PDF, dashboard, and evidence locations remain unchanged.
+- Execution history and retention are disabled by default.
+- History, aggregation, and trend schemas are independently versioned at `1.0.0`.
 
-## v2.3.1 — Latest stable
+## v2.3.1 — 2026-06-21
 
-- Latest stable release before the v2.4.0 historical analytics milestone.
+- Prepared the repository and package metadata for private beta.
+- Retained the reporting, failure-analysis, and trace-availability features introduced in v2.3.0.
 
-## v1.0.0
+## v2.3.0 — 2026-06-21
 
-### Added
+- Added deterministic failure classification and normalized failure signatures.
+- Added in-memory failure grouping and aggregate failure summaries.
+- Added deterministic root-cause clusters with confidence, evidence, and recommendations.
+- Added Playwright trace-file detection and trace availability in PDF and HTML reports.
 
-- Screenshot Evidence per step
-- Auto Action Capture for native Playwright actions
-- API Logging
-- PDF Report generation with PDFKit
-- Execution Summary
-- Test Case Summary
-- Step Summary
-- Failed Test Analysis
-- Custom HEYNA branding
-- Logo support through `assets/heyna-logo.png`
-- Footer with page numbering
-- GitHub Actions workflow
-- Reusable CommonJS reporting utilities
-- `heyna.config.js` for auto-capture configuration
+## v2.2.0 — 2026-06-19
 
-### Changed
+- Added the static HTML dashboard at `dashboard/index.html`.
+- Added execution analytics, summary cards, charts, coverage diagnostics, failure indicators, and dashboard report generation.
 
-- Reorganized Playwright tests into `tests/examples/` for sample usage and `tests/framework/` for framework regression coverage.
-- Renamed `pdf-page-management.spec.js` to `pdf-generator.spec.js` under `tests/framework/`.
+## v2.2.0-beta.2 — 2026-06-19
 
-### Fixed
+- Expanded the HTML dashboard with execution analytics during beta development.
 
-- Status Handling for `PASSED`, `FAILED`, `SKIPPED`, and `TIMEDOUT`
-- Report Generation stability
-- Failed test persistence in `execution.json`
-- Error message storage for failed tests
-- Failed screenshot capture
-- Table border consistency
-- PDF footer rendering
+## v2.2.0-beta.1 — 2026-06-18
 
-### Changed
+- Introduced the initial HTML dashboard foundation.
 
-- Consolidated reporting utilities into:
-  - `utils/HeynaReporter.js`
-  - `utils/HeynaPdfGenerator.js`
-- Improved enterprise PDF layout
-- Improved evidence card spacing and screenshot placement
+## v2.1.0 — 2026-06-17
 
-## v2.3.0
+- Added automatic capture for supported Playwright page, locator, keyboard, and mouse actions.
+- Added modern locator factories and locator chaining.
+- Added configurable screenshot modes, coverage diagnostics, retry-aware execution records, and safer global teardown finalization.
 
-### Added
+## v1.0.0 — 2026-06-11
 
-- Failure Classification Engine in `utils/FailureClassifier.js`
-- Automatic failure categorization for test failures
-- `failureCategory` field in `execution.json`
-- `failureCategories` aggregation in `metadata.json`
-- Failure category display in PDF Failed Test Analysis
-- Failure category badge in HTML Dashboard failure cards
-- Unit tests for all classification categories
-- Failure Grouping & Aggregation in `utils/FailureGrouping.js`
-- `computeFailureSignature()` normalization in `utils/FailureClassifier.js`
-- Failure Group Summary section in PDF report
-- Failure Group Summary section in HTML dashboard
-- Unit tests for signature normalization and failure grouping
-- Intelligent Failure Summaries in `utils/FailureSummaryEngine.js`
-- INTELLIGENT FAILURE SUMMARY section in PDF report
-- Intelligent Failure Summary panel in HTML dashboard
-- Unit tests for health status, distribution, recurring failures, impacted suites, and recommendations
-- Root Cause Clustering via `utils/RootCauseClusterer.js`
-- ROOT CAUSE ANALYSIS section in PDF report
-- Root Cause Analysis panel in HTML dashboard
-- Unit tests for clustering, confidence scoring, cross-category merge, and edge cases
-- Playwright Trace Intelligence via `utils/HeynaReporter.js` trace detection
-- TRACE INTELLIGENCE section in PDF report
-- Trace Intelligence panel in HTML dashboard
-- Unit tests for trace detection, persistence, formatting, and report rendering
-
-### Trace Intelligence
-
-Detects Playwright trace artifacts (`trace.zip`) from `testInfo.outputDir` during test completion. Includes metadata extraction (file size, modified timestamp) and graceful handling of missing traces. Displayed as a TRACE INTELLIGENCE section in PDF and a Trace Intelligence panel in HTML.
-
-- **Trace Detection**: Auto-detected via `Heyna.detectTrace(testInfo)` in `completeTest()` using `testInfo.outputDir`
-- **Metadata**: File existence, path relative to project root, byte size, ISO modified timestamp
-- **Trace Status**: Available / Not Available badge per test case
-- **Missing Traces**: Graceful empty state in both PDF and HTML when no traces collected
-
-Displayed in both PDF and HTML reports as a Trace Intelligence section, placed after Root Cause Analysis.
-
-### Root Cause Taxonomy (6 categories)
-
-- `AUTH_FLOW_REGRESSION` - Authentication flow failures
-- `UI_REGRESSION` - UI/element interaction failures
-- `API_REGRESSION` - API endpoint contract failures
-- `TIMEOUT_REGRESSION` - Timeout-related failures
-- `CONFIGURATION_REGRESSION` - Browser/environment configuration failures
-- `UNKNOWN_ROOT_CAUSE` - Unrecognized fallback
-
-### Root Cause Clustering
-
-Groups failures into root-cause clusters by merging `FailureGroup` objects that share the same feature area and have compatible failure patterns (shared stack origin, shared error type, or cross-category merge). Each cluster includes:
-
-- **Root Cause Classification**: One of 6 taxonomy labels, with auth-keyword override
-- **Confidence Score**: 0-100 (HIGH ≥80, MEDIUM ≥50, LOW <50) from 5 additive signals
-- **Evidence**: List of signatures, features, and error types backing the classification
-- **Recommendation**: Actionable guidance specific to the root cause type
-
-Displayed in both PDF and HTML reports as a Root Cause Analysis section.
-
-### Supported Categories
-
-- `ASSERTION_FAILURE` - Playwright assertion failures
-- `LOCATOR_FAILURE` - Element/locator not found or interaction failures
-- `TIMEOUT_FAILURE` - Timeout-related failures
-- `NETWORK_FAILURE` - Network/connectivity failures
-- `API_FAILURE` - API request/response failures
-- `CONFIGURATION_FAILURE` - Browser/config/environment setup failures
-- `UNKNOWN_FAILURE` - Unrecognized failure fallback
-
-### Failure Grouping
-
-Groups similar failures by `failureCategory` + normalized signature. Groups are sorted by frequency descending. Each group shows occurrence count and affected test cases. Displayed in both PDF and HTML reports as a Grouped Failure Summary section.
-
-### Intelligent Failure Summaries
-
-Generates execution intelligence to help QA engineers quickly understand test health:
-
-- **Health Status**: HEALTHY (>95% pass), WARNING (>80%), CRITICAL (<80%)
-- **Failure Distribution**: Count and percentage per failure category (sorted descending)
-- **Top Recurring Failures**: Most frequent failure signatures (top 5)
-- **Impacted Test Suites**: Most affected feature areas (top 5, grouped by `feature` field)
-- **Investigation Recommendations**: Actionable guidance based on dominant failure category
-
-Displayed in both PDF and HTML reports as an Intelligent Failure Summary section.
-
-## v2.2.0
-
-### Added
-
-- HTML Dashboard Foundation generating `dashboard/index.html`.
-- Metadata header, summary cards, test case table, coverage diagnostics, and recent failed tests sections.
-- Dashboard generation in global teardown and `regenerate-report.js` while preserving PDF generation.
-
-## v2.1.0
-
-### Added
-
-- Production-ready Auto Action Capture engine
-- Support for `getByRole`, `getByText`, `getByLabel`, `getByPlaceholder`, `getByTestId`, `getByAltText`, and `getByTitle`
-- Support for locator chaining: `first`, `last`, `nth`, and `filter`
-- Support for `dragAndDrop`, `setInputFiles`, `hover`, `dblclick`, `tap`, `focus`, `blur`, `keyboard.press`, and `mouse.click`
-- Retry-aware attempt data in `execution.json`
-- Auto Capture Coverage diagnostics
-- Global teardown report finalization for safer parallel execution
-
-### Fixed
-
-- Reduced race-condition risk during parallel execution
-- Prevented per-file `afterAll` report generation from marking other running tests as failed
+- Added Playwright execution reporting, screenshot evidence, filtered API logging, and PDF generation.
+- Added execution, test-case, step, and failed-test summaries.
+- Added HEYNA branding, project configuration, and the initial GitHub Actions workflow.

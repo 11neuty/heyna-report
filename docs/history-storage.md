@@ -2,6 +2,8 @@
 
 HEYNA REPORT v2.4.0-next.0 contains the unreleased execution-history storage contract for the GitHub v2.4.0 milestone. Current-run `test-results/execution.json`, `test-results/metadata.json`, PDF, dashboard, evidence, and trace APIs keep their existing locations and formats.
 
+Architecture rationale is recorded in the [execution-history storage ADR](adr/execution-history-storage.md). Historical consumers should use the [Historical Metrics Aggregation](historical-metrics-aggregation.md) contract rather than reading run directories directly.
+
 ## Opt-in configuration
 
 History is disabled by default during the prerelease. Enabling it retains immutable copies of execution data and may retain screenshots, traces, API evidence, and other sensitive material. Storage can grow without bound unless retention or external CI cleanup is configured.
@@ -122,6 +124,6 @@ const inclusiveRange = await history.queryRunsByDateRange(
 
 New summary writes accumulate each canonical duration as exact thousandth-millisecond `BigInt` units before converting the total back to a public number. The stored schema remains `1.0.0`; its reader still accepts the original finite non-negative numeric contract. Historical floating-point totals are not rewritten or classified as corrupt. The aggregation layer may recognize and explicitly normalize the narrow old-writer artifact signature, accompanied by `HEYNA_HISTORICAL_DURATION_NORMALIZED`.
 
-Historical metrics consumers should use `HistoricalMetricsAggregator` rather than scanning `history/runs` or averaging stored derived values. See `docs/historical-metrics-aggregation.md`.
+Historical metrics consumers should use `HistoricalMetricsAggregator` rather than scanning `history/runs` or averaging stored derived values. See [Historical Metrics Aggregation](historical-metrics-aggregation.md).
 
 This storage component stores immutable runs and does not aggregate them itself. The separate `HistoricalMetricsAggregator` provides summary-only factual aggregation; trends, comparisons, dashboards, databases, HTTP endpoints, and module-system migrations remain out of scope.

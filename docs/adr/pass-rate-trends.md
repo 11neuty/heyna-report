@@ -5,6 +5,8 @@
 - Trend schema: 1.0.0
 - Aggregation dependency: Historical metrics aggregation schema 1.0.0
 
+Public contract: [Pass Rate Trends](../pass-rate-trends.md)
+
 ## Context
 
 Pass-rate evolution is the first consumer of the historical metrics foundation. It needs chronological run and UTC bucket series, explicit change semantics, stable classification, and data-quality warnings without duplicating filesystem access, history validation, or aggregation formulas.

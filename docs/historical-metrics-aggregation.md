@@ -2,6 +2,8 @@
 
 HEYNA REPORT `2.4.0-next.0` provides a read-only CommonJS aggregation layer over execution-history summary schema `1.0.0`. It does not enumerate `history/runs`, read `execution.json`, or mutate stored history. All storage access and corruption classification remain owned by `HistoryManager`.
 
+See the [historical-metrics aggregation ADR](adr/historical-metrics-aggregation.md) for the decision rationale and [Pass Rate Trends](pass-rate-trends.md) for the current trend consumer.
+
 ## Construction and API
 
 ```js
@@ -191,4 +193,4 @@ Each storage-backed public call performs exactly one `HistoryManager.listRunsWit
 
 ## Non-goals
 
-This service does not calculate trends, slopes, regressions, recurring failures, execution comparisons, narratives, dashboards, PDFs, HTML reports, quality evolution, suite/test expansions, retention, or migration. Those features consume this factual query and aggregation layer in later milestone issues.
+This service does not itself calculate trends, slopes, regressions, recurring failures, execution comparisons, narratives, dashboards, PDFs, HTML reports, quality evolution, suite/test expansions, retention, or migration. Pass-rate trends are implemented separately by `PassRateTrendAnalyzer`; other consumers remain outside this aggregation contract.

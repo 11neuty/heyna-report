@@ -15,10 +15,10 @@ Thank you for considering a contribution to HEYNA REPORT.
 Use clear branch names:
 
 ```text
-feature/pdf-chart-summary
+feat/pdf-chart-summary
 fix/failed-test-analysis
-docs/quick-start-update
-refactor/reporter-core
+docs/getting-started-update
+chore/reporter-core
 ```
 
 ## Commit Message Style
@@ -28,7 +28,7 @@ Use concise commit messages:
 ```text
 feat: add pie chart summary
 fix: preserve failed tests in execution json
-docs: update installation guide
+docs: update getting started guide
 refactor: simplify pdf table renderer
 ```
 
@@ -45,12 +45,26 @@ refactor: simplify pdf table renderer
 
 ## Local Validation
 
-Before opening a pull request, run:
+Use Node.js 20 or later. Before opening a pull request, run:
 
 ```bash
 npm install
 npx playwright install chromium
 npm test
+```
+
+When changing execution history, aggregation, or pass-rate trends, also run:
+
+```bash
+npm run test:history
+npm run test:trends
+```
+
+Run `npm run test:framework` when changing shared reporting utilities.
+
+If current execution data exists and report rendering changed, regenerate it:
+
+```bash
 node regenerate-report.js
 ```
 

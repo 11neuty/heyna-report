@@ -16,6 +16,7 @@ This is an unreleased development version for the GitHub v2.4.0 milestone. The s
 - Read-only historical metrics aggregation with normalized run queries, weighted and average-run rates, duration rollups, and UTC time buckets.
 - Structured summary diagnostics for corrupt, unsupported, invalid, missing, and unreadable completed runs.
 - Strict timestamps with zero to three fractional digits; exact `BigInt` thousandth-millisecond duration aggregation; backward-compatible schema `1.0.0` reading; sanitized diagnostics; preserved fatal native I/O codes; aggregation-only exclusion counters; and truncation-only limit warnings.
+- Read-only pass-rate trends with run/day/week/month series, weighted first/latest and previous/latest changes, configurable stable classification, checked moving weighted rates, and propagated historical data-quality warnings.
 
 ### Changed
 

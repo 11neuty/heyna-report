@@ -11,6 +11,7 @@
     "test": "playwright test",
     "test:framework": "playwright test tests/framework --workers=1",
     "test:history": "playwright test tests/framework/history-manager.spec.js tests/framework/history-blockers.spec.js tests/framework/historical-metrics-aggregator.spec.js --workers=1",
+    "test:trends": "playwright test tests/framework/pass-rate-trend-analyzer.spec.js --workers=1",
     "test:clean": "npm run clean && playwright test",
     "test:headed": "playwright test --headed",
     "test:ui": "playwright test --ui",

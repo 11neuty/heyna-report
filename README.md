@@ -107,6 +107,7 @@ npm test
 - **Parallel Execution** — Worker-safe reporting for concurrent test runs
 - **Durable Execution History (opt-in prerelease)** — Immutable, versioned run snapshots with atomic publication, retrieval, retention, and legacy migration. Disabled by default; review evidence privacy and retention before enabling it.
 - **Historical Metrics Aggregation** - Read-only normalized queries, exact three-decimal-millisecond rollups, truthful aggregation-only exclusions, and UTC grouping over backward-compatible schema `1.0.0` run summaries.
+- **Pass Rate Trends** - Chronological run and UTC bucket series with weighted changes, deterministic direction, moving weighted rates, and explicit data-quality warnings.
 
 ---
 
@@ -127,6 +128,7 @@ npm test
 | [Trace Intelligence](docs/trace-intelligence.md) | Playwright Trace integration |
 | [Execution History Storage](docs/history-storage.md) | Configuration, storage format, retrieval, retention, and migration |
 | [Historical Metrics Aggregation](docs/historical-metrics-aggregation.md) | Query filters, metric semantics, grouping, and warnings |
+| [Pass Rate Trends](docs/pass-rate-trends.md) | Weighted pass-rate series, changes, classification, moving rates, and warnings |
 | [Roadmap](docs/roadmap.md) | Planned features |
 | [Release History](docs/release-history.md) | Version changelog |
 

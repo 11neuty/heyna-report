@@ -13,6 +13,9 @@ This is an unreleased development version for the GitHub v2.4.0 milestone. The s
 - CommonJS `HistoryManager` APIs for run retrieval, date-range queries, retention, recovery, and safe legacy migration.
 - Independently versioned summary, schema, and artifact manifest documents.
 - Runtime artifact-root resolution for isolated framework tests and embedded consumers.
+- Read-only historical metrics aggregation with normalized run queries, weighted and average-run rates, duration rollups, and UTC time buckets.
+- Structured summary diagnostics for corrupt, unsupported, invalid, missing, and unreadable completed runs.
+- Strict timestamps with zero to three fractional digits; exact `BigInt` thousandth-millisecond duration aggregation; backward-compatible schema `1.0.0` reading; sanitized diagnostics; preserved fatal native I/O codes; aggregation-only exclusion counters; and truncation-only limit warnings.
 
 ### Changed
 

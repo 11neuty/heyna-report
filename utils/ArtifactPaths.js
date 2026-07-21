@@ -67,8 +67,8 @@ function validateLockConfig(lock) {
     if (!lock || typeof lock !== 'object' || Array.isArray(lock)) {
         throw new TypeError('history.lock must be an object.');
     }
-    if (typeof lock.maxRetries !== 'number' || !Number.isFinite(lock.maxRetries) || !Number.isInteger(lock.maxRetries) || lock.maxRetries < 0) {
-        throw new TypeError('history.lock.maxRetries must be a finite non-negative integer.');
+    if (typeof lock.maxRetries !== 'number' || !Number.isSafeInteger(lock.maxRetries) || lock.maxRetries < 0) {
+        throw new TypeError('history.lock.maxRetries must be a safe non-negative integer.');
     }
     requireFiniteNonNegativeNumber(lock.retryDelayMs, 'history.lock.retryDelayMs');
     requireFiniteNonNegativeNumber(lock.staleMs, 'history.lock.staleMs');

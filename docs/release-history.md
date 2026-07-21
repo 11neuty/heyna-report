@@ -9,6 +9,8 @@ Development version for the GitHub v2.4.0 milestone. It is not a stable release 
 - Summary/schema/manifest contracts
 - Retrieval, retention, recovery, and legacy migration APIs
 - Runtime path isolation and resilient teardown orchestration
+- Historical summary diagnostics, normalized metrics aggregation, filters, and UTC dimension grouping
+- Exact thousandth-millisecond aggregation with backward-compatible schema `1.0.0` reading, zero-to-three-digit timestamp fractions, path-safe diagnostics, preserved fatal native I/O codes, and deterministic aggregation-only exclusions
 
 ## v2.3.1 — Latest stable
 

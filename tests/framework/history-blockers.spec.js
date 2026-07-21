@@ -221,10 +221,11 @@ test.describe('bounded lock configuration', () => {
         ['NaN', Number.NaN],
         ['negative', -1],
         ['fractional', 1.5],
+        ['unsafe integer', Number.MAX_SAFE_INTEGER + 1],
         ['string', '3']
     ]) {
         test(`rejects ${name} maxRetries`, () => {
-            expect(() => mergeHistoryConfig({ lock: { maxRetries: value } })).toThrow(/maxRetries.*finite non-negative integer/);
+            expect(() => mergeHistoryConfig({ lock: { maxRetries: value } })).toThrow(/maxRetries.*safe non-negative integer/);
         });
     }
 

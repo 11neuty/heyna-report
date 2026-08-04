@@ -20,7 +20,8 @@ test.beforeEach(async ({ page }, testInfo) => {
 
     Heyna.initializeTest(currentTC, {
         retry: testInfo.retry,
-        repeatEachIndex: testInfo.repeatEachIndex
+        repeatEachIndex: testInfo.repeatEachIndex,
+        testInfo
     });
     Heyna.attach(page, currentTC);
 });
@@ -110,6 +111,15 @@ test('TC003_AutoCaptureModernPlaywrightPatterns', async ({ page }, testInfo) => 
     const tc = results.find(item => item.testCase === currentTC);
     const stepNames = (tc.steps || []).map(step => step.name);
 
+    expect(tc.executionKey).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(tc.testIdentity).toMatchObject({
+        project: testInfo.project.name,
+        file: 'tests/framework/auto-capture.spec.js',
+        title: testInfo.title,
+        identityQuality: 'strong'
+    });
+    expect(tc.testCase).toBe(currentTC);
+    expect(tc.repeatEachIndex).toBe(testInfo.repeatEachIndex);
     expect(stepNames).toContain('Fill Username');
     expect(stepNames).toContain('Fill Search');
     expect(stepNames).toContain('Click Login');

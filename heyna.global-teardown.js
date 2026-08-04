@@ -1,7 +1,4 @@
 const Heyna = require('./utils/HeynaReporter');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
 const { HeynaPdfGenerator } = require('./utils/HeynaPdfGenerator');
 const { HeynaHtmlDashboardGenerator } = require('./utils/HeynaHtmlDashboardGenerator');
 const HistoryManager = require('./utils/HistoryManager');
@@ -61,14 +58,6 @@ async function runTeardown(options = {}) {
         });
     } finally {
         await attempt('run-lock cleanup', async () => reporter.completeRun());
-        if (options.cleanupArtifactRoot === true && process.env.HEYNA_CLEAN_ARTIFACT_ROOT === '1' && process.env.HEYNA_ARTIFACT_ROOT) {
-            const root = path.resolve(process.env.HEYNA_ARTIFACT_ROOT);
-            const relativeToTemp = path.relative(path.resolve(os.tmpdir()), root);
-            if (relativeToTemp && !relativeToTemp.startsWith('..') && !path.isAbsolute(relativeToTemp)) {
-                fs.rmSync(root, { recursive: true, force: true });
-                if (typeof logger.log === 'function') logger.log(`[HEYNA TEARDOWN] Cleaned isolated artifact root: ${root}`);
-            }
-        }
     }
 
     if (failures.length && options.throwOnError !== false) {
@@ -85,6 +74,6 @@ async function runTeardown(options = {}) {
 }
 
 module.exports = async function playwrightGlobalTeardown() {
-    return runTeardown({ cleanupArtifactRoot: true });
+    return runTeardown();
 };
 module.exports.runTeardown = runTeardown;

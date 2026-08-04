@@ -1,8 +1,12 @@
 const fs = require('fs');
 const path = require('path');
 const { classifyFailure, FAILURE_CATEGORIES } = require('./FailureClassifier');
+const { createFailureIdentity, createTestIdentity, fingerprint, normalizeProject } = require('./FailureIdentity');
 const { DEFAULT_HISTORY_CONFIG, mergeHistoryConfig, resolveArtifactPaths } = require('./ArtifactPaths');
 const { ensureDir, readJson, atomicWriteJson } = require('./JsonFile');
+
+const DEGRADED_TEST_DISPLAY = 'Unidentified test';
+const executionTraceLocators = new WeakMap();
 
 const DEFAULT_CONFIG = {
     autoCapture: true,
@@ -203,8 +207,15 @@ function mergeReporterConfig(baseConfig, overrides = {}) {
     };
 }
 
-function findOrCreateTestCase(data, testCase) {
-    let tc = data.find(item => item.testCase === testCase);
+function findOrCreateTestCase(data, testCase, lookup = {}) {
+    let tc = lookup.executionKey
+        ? data.find(item => item.executionKey === lookup.executionKey)
+        : null;
+
+    if (!tc) {
+        const matches = data.filter(item => item.testCase === testCase);
+        tc = matches.slice().reverse().find(item => normalizeStatus(item.status) === 'RUNNING') || matches[0];
+    }
 
     if (!tc) {
         tc = {
@@ -220,6 +231,91 @@ function findOrCreateTestCase(data, testCase) {
 
     tc.steps = Array.isArray(tc.steps) ? tc.steps : [];
     return tc;
+}
+
+function executionKeyFor(identity, repeatEachIndex) {
+    return fingerprint(`execution-outcome/v1\0${identity.project}\0${identity.testKey}\0${repeatEachIndex}`);
+}
+
+function publicTestCaseDisplay(testCase, identity) {
+    return identity.identityQuality === 'degraded' ? DEGRADED_TEST_DISPLAY : identity.title;
+}
+
+function traceLocatorFor(testInfo) {
+    if (!testInfo || typeof testInfo.outputDir !== 'string' || !testInfo.outputDir.trim()
+        || /[\u0000-\u001f\u007f]/.test(testInfo.outputDir)) return null;
+    try {
+        return Object.freeze({ tracePath: path.resolve(testInfo.outputDir, 'trace.zip') });
+    } catch (error) {
+        return null;
+    }
+}
+
+function executionContext(testCase, identity, repeatEachIndex, options = {}) {
+    const context = Object.freeze({
+        executionKey: executionKeyFor(identity, repeatEachIndex),
+        testIdentity: identity,
+        repeatEachIndex,
+        displayTestCase: publicTestCaseDisplay(testCase, identity)
+    });
+    const locator = traceLocatorFor(options.testInfo) || options.traceLocator || null;
+    if (locator) executionTraceLocators.set(context, locator);
+    return context;
+}
+
+function traceLocatorFrom(context) {
+    return context ? executionTraceLocators.get(context) || null : null;
+}
+
+function safeRelativeTraceFile(root, tracePath) {
+    const relative = path.relative(path.resolve(root), path.resolve(tracePath));
+    if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return null;
+    if (relative.replace(/\\/g, '/').split('/').some(component =>
+        /secret|token|password|credential|username|api[._-]?key|sk-[a-z0-9]/i.test(component))) return null;
+    return relative;
+}
+
+function traceMetadata(locator, artifactRoot) {
+    if (!locator || !fs.existsSync(locator.tracePath)) return { traceAvailable: false };
+    try {
+        const stat = fs.statSync(locator.tracePath);
+        if (!stat.isFile() || !Number.isSafeInteger(stat.size) || stat.size < 0) return { traceAvailable: false };
+        const metadata = {
+            traceAvailable: true,
+            traceSize: stat.size,
+            traceModified: stat.mtime.toISOString()
+        };
+        const traceFile = safeRelativeTraceFile(artifactRoot, locator.tracePath);
+        if (traceFile) metadata.traceFile = traceFile;
+        return metadata;
+    } catch (error) {
+        return { traceAvailable: false };
+    }
+}
+
+function applyTraceMetadata(target, metadata) {
+    target.traceAvailable = metadata && metadata.traceAvailable === true;
+    delete target.traceFile;
+    delete target.traceSize;
+    delete target.traceModified;
+    if (!target.traceAvailable) return;
+    if (typeof metadata.traceFile === 'string' && metadata.traceFile) target.traceFile = metadata.traceFile;
+    if (Number.isSafeInteger(metadata.traceSize) && metadata.traceSize >= 0) target.traceSize = metadata.traceSize;
+    if (typeof metadata.traceModified === 'string' && metadata.traceModified) target.traceModified = metadata.traceModified;
+}
+
+function executionContextConflict() {
+    const error = new Error('HEYNA test lifecycle metadata conflicts with the initialized execution context.');
+    error.code = 'HEYNA_EXECUTION_CONTEXT_CONFLICT';
+    return error;
+}
+
+function hasOwn(value, key) {
+    return Boolean(value) && Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function hasDefined(value, key) {
+    return hasOwn(value, key) && value[key] !== undefined && value[key] !== null;
 }
 
 class ApiLogger {
@@ -258,6 +354,7 @@ class HeynaReporter {
     static stepDescriptions = { ...defaultStepDescriptions };
     static config = loadConfig();
     static attachedPages = new WeakSet();
+    static executionContexts = new Map();
 
     static getConfig() {
         return this.config;
@@ -308,6 +405,8 @@ class HeynaReporter {
             return { shouldReset };
         });
 
+        if (runState.shouldReset) this.executionContexts.clear();
+
         const metadataUpdates = {
             project: metadata.project || process.env.HEYNA_PROJECT || 'SauceDemo',
             feature: metadata.feature || process.env.HEYNA_FEATURE || 'Login & Authentication',
@@ -336,20 +435,35 @@ class HeynaReporter {
         if (!fs.existsSync(paths.metadataFile)) this.updateMetadata({});
 
         mutateExecution(data => {
-            const existing = data.find(tc => tc.testCase === testCase);
             const retry = Number(metadata.retry || 0);
             const repeatEachIndex = Number(metadata.repeatEachIndex || 0);
+            const testInfo = metadata.testInfo;
+            const testIdentity = createTestIdentity({
+                projectRoot: this.config.projectRoot,
+                testInfo,
+                testCase,
+                project: metadata.project
+            });
+            const context = executionContext(testCase, testIdentity, repeatEachIndex, { testInfo });
+            const { executionKey } = context;
+            this.executionContexts.set(testCase, context);
+            const existing = data.find(tc => tc.executionKey === executionKey)
+                || (!testInfo ? data.find(tc => tc.testCase === testCase
+                    && Number(tc.repeatEachIndex || 0) === repeatEachIndex
+                    && (tc.project || testIdentity.project) === testIdentity.project) : null);
             const attempt = {
                 attemptNumber: retry + 1,
                 retry,
                 repeatEachIndex,
                 status: 'RUNNING',
                 duration: 0,
+                traceAvailable: false,
                 steps: [],
                 startedAt: new Date().toISOString()
             };
 
             if (existing) {
+                existing.testCase = context.displayTestCase;
                 existing.status = 'RUNNING';
                 existing.duration = 0;
                 existing.feature = metadata.feature || existing.feature || process.env.HEYNA_FEATURE || 'Login & Authentication';
@@ -358,19 +472,31 @@ class HeynaReporter {
                 existing.attempts.push(attempt);
                 existing.currentAttempt = attempt.attemptNumber;
                 existing.retryCount = retry;
+                existing.repeatEachIndex = repeatEachIndex;
+                existing.project = testIdentity.project;
+                existing.executionKey = executionKey;
+                existing.testIdentity = testIdentity;
                 existing.executionDate = new Date().toISOString();
+                applyTraceMetadata(existing, { traceAvailable: false });
                 delete existing.errorMessage;
                 delete existing.failureScreenshot;
+                delete existing.failureIdentity;
+                delete existing.failureCategory;
             } else {
                 data.push({
-                    testCase,
+                    testCase: context.displayTestCase,
+                    executionKey,
+                    testIdentity,
+                    project: testIdentity.project,
                     status: 'RUNNING',
                     duration: 0,
+                    traceAvailable: false,
                     feature: metadata.feature || process.env.HEYNA_FEATURE || 'Login & Authentication',
                     steps: [],
                     attempts: [attempt],
                     currentAttempt: attempt.attemptNumber,
                     retryCount: retry,
+                    repeatEachIndex,
                     executionDate: new Date().toISOString()
                 });
             }
@@ -598,7 +724,22 @@ class HeynaReporter {
 
     static addStep(testCase, step) {
         mutateExecution(data => {
-            const tc = findOrCreateTestCase(data, testCase);
+            let context = this.executionContexts.get(testCase);
+            if (!context) {
+                const testIdentity = createTestIdentity({
+                    projectRoot: this.config.projectRoot,
+                    testCase,
+                    project: process.env.HEYNA_PROJECT
+                });
+                context = executionContext(testCase, testIdentity, 0);
+                this.executionContexts.set(testCase, context);
+            }
+            const tc = findOrCreateTestCase(data, context.displayTestCase, { executionKey: context.executionKey });
+            tc.testCase = context.displayTestCase;
+            tc.executionKey = context.executionKey;
+            tc.testIdentity = context.testIdentity;
+            tc.project = context.testIdentity.project;
+            tc.repeatEachIndex = context.repeatEachIndex;
             const normalized = {
                 ...step,
                 status: step.status || stepStatus(step.status)
@@ -616,52 +757,87 @@ class HeynaReporter {
     }
 
     static detectTrace(testInfo) {
-        if (!testInfo || !testInfo.outputDir) return { traceAvailable: false };
-
-        const tracePath = path.join(testInfo.outputDir, 'trace.zip');
-        const traceAvailable = fs.existsSync(tracePath);
-
-        if (!traceAvailable) return { traceAvailable: false };
-
-        try {
-            const stat = fs.statSync(tracePath);
-            return {
-                traceAvailable: true,
-                traceFile: path.relative(this.getPaths().rootDir, tracePath),
-                traceSize: stat.size,
-                traceModified: stat.mtime.toISOString()
-            };
-        } catch (error) {
-            return { traceAvailable: false };
-        }
+        return traceMetadata(traceLocatorFor(testInfo), this.getPaths().rootDir);
     }
 
     static completeTest(testCase, status, duration, errorMessage, extra = {}) {
-        const failureCategory = errorMessage
-            ? classifyFailure(cleanMessage(errorMessage)).category
+        const cleanedError = cleanMessage(errorMessage);
+        const failureCategory = cleanedError
+            ? classifyFailure(cleanedError).category
             : FAILURE_CATEGORIES.UNKNOWN_FAILURE;
+        const testInfo = extra.testInfo;
+        const retry = Number(testInfo && testInfo.retry || extra.retry || 0);
+        const established = this.executionContexts.get(testCase);
+        const repeatSupplied = hasDefined(testInfo, 'repeatEachIndex') || hasDefined(extra, 'repeatEachIndex');
+        const repeatEachIndex = repeatSupplied
+            ? Number(hasDefined(testInfo, 'repeatEachIndex') ? testInfo.repeatEachIndex : extra.repeatEachIndex)
+            : (established ? established.repeatEachIndex : 0);
+        if (!Number.isSafeInteger(repeatEachIndex) || repeatEachIndex < 0) throw executionContextConflict();
 
-        const traceMeta = this.detectTrace(extra.testInfo);
+        let context;
+        if (established && !testInfo) {
+            if (repeatEachIndex !== established.repeatEachIndex) throw executionContextConflict();
+            if (hasDefined(extra, 'project') && normalizeProject(extra.project) !== established.testIdentity.project) {
+                throw executionContextConflict();
+            }
+            context = established;
+        } else {
+            const testIdentity = createTestIdentity({
+                projectRoot: this.config.projectRoot,
+                testInfo,
+                testCase,
+                project: extra.project
+            });
+            const candidate = executionContext(testCase, testIdentity, repeatEachIndex, {
+                testInfo,
+                traceLocator: traceLocatorFrom(established)
+            });
+            if (established && candidate.executionKey !== established.executionKey) throw executionContextConflict();
+            context = candidate;
+        }
+        const testIdentity = context.testIdentity;
+        const { executionKey } = context;
+        this.executionContexts.set(testCase, context);
+        const failureIdentity = ['FAILED', 'TIMEDOUT', 'INTERRUPTED'].includes(normalizeStatus(status))
+            ? createFailureIdentity({
+                projectRoot: this.config.projectRoot,
+                errorMessage: cleanedError,
+                stack: testInfo && testInfo.error && testInfo.error.stack,
+                failureCategory
+            })
+            : null;
+        const traceMeta = traceMetadata(traceLocatorFrom(context), this.getPaths().rootDir);
 
         mutateExecution(data => {
-            const tc = findOrCreateTestCase(data, testCase);
+            let tc = data.find(item => item.executionKey === executionKey);
+            if (!tc) {
+                tc = data.slice().reverse().find(item => item.testCase === testCase
+                    && Number(item.repeatEachIndex || 0) === repeatEachIndex
+                    && normalizeStatus(item.status) === 'RUNNING');
+            }
+            tc = tc || findOrCreateTestCase(data, context.displayTestCase, { executionKey });
 
+            tc.testCase = context.displayTestCase;
+            tc.executionKey = executionKey;
+            tc.testIdentity = testIdentity;
+            tc.project = testIdentity.project;
+            tc.repeatEachIndex = repeatEachIndex;
+            tc.retryCount = retry;
             tc.status = normalizeStatus(status);
             tc.duration = duration || 0;
-            if (errorMessage) tc.errorMessage = cleanMessage(errorMessage);
+            if (cleanedError) tc.errorMessage = cleanedError;
             if (extra.failureScreenshot) tc.failureScreenshot = extra.failureScreenshot;
 
-            tc.traceAvailable = traceMeta.traceAvailable;
-            if (traceMeta.traceAvailable) {
-                tc.traceFile = traceMeta.traceFile;
-                tc.traceSize = traceMeta.traceSize;
-                tc.traceModified = traceMeta.traceModified;
-            }
+            applyTraceMetadata(tc, traceMeta);
 
             tc.finalResult = tc.status;
 
             if (['FAILED', 'TIMEDOUT', 'INTERRUPTED'].includes(normalizeStatus(status))) {
                 tc.failureCategory = failureCategory;
+                tc.failureIdentity = failureIdentity;
+            } else {
+                delete tc.failureCategory;
+                delete tc.failureIdentity;
             }
 
             if (Array.isArray(tc.attempts) && tc.attempts.length) {
@@ -669,12 +845,11 @@ class HeynaReporter {
                 attempt.status = tc.status;
                 attempt.duration = duration || 0;
                 attempt.finishedAt = new Date().toISOString();
-                if (errorMessage) attempt.errorMessage = cleanMessage(errorMessage);
+                if (cleanedError) attempt.errorMessage = cleanedError;
                 if (extra.failureScreenshot) attempt.failureScreenshot = extra.failureScreenshot;
-                if (traceMeta.traceAvailable) {
-                    attempt.traceFile = traceMeta.traceFile;
-                    attempt.traceSize = traceMeta.traceSize;
-                }
+                applyTraceMetadata(attempt, traceMeta);
+                attempt.retry = retry;
+                attempt.repeatEachIndex = repeatEachIndex;
             }
         });
 
@@ -682,7 +857,7 @@ class HeynaReporter {
             this.recordFailureCategory(failureCategory);
         }
 
-        console.log(`[HEYNA]\n${testCase} => ${normalizeStatus(status)}`);
+        console.log(`[HEYNA]\n${context.displayTestCase} => ${normalizeStatus(status)}`);
     }
 
     static markRunningTestsAsFailed(message = 'Test did not complete before report generation.') {
@@ -694,6 +869,20 @@ class HeynaReporter {
                     tc.finalResult = 'FAILED';
                     tc.errorMessage = tc.errorMessage || message;
                     tc.failureCategory = FAILURE_CATEGORIES.TIMEOUT_FAILURE;
+                    tc.testIdentity = tc.testIdentity || createTestIdentity({
+                        projectRoot: this.config.projectRoot,
+                        testCase: tc.testCase,
+                        project: tc.project
+                    });
+                    tc.testCase = publicTestCaseDisplay(tc.testCase, tc.testIdentity);
+                    tc.project = tc.project || tc.testIdentity.project;
+                    tc.repeatEachIndex = Number(tc.repeatEachIndex || 0);
+                    tc.executionKey = tc.executionKey || executionKeyFor(tc.testIdentity, tc.repeatEachIndex);
+                    tc.failureIdentity = createFailureIdentity({
+                        projectRoot: this.config.projectRoot,
+                        errorMessage: tc.errorMessage,
+                        failureCategory: tc.failureCategory
+                    });
                     if (Array.isArray(tc.attempts) && tc.attempts.length) {
                         const attempt = tc.attempts[tc.attempts.length - 1];
                         attempt.status = 'FAILED';
@@ -716,7 +905,7 @@ class HeynaReporter {
 
     static async captureEvidence(page, testCase, stepName, prefix) {
         const paths = this.getPaths();
-        const folder = path.join(paths.evidenceDir, testCase);
+        const folder = path.join(paths.evidenceDir, this.artifactTestCaseName(testCase));
         ensureDir(folder);
         const screenshotPath = path.join(folder, `${Date.now()}_${prefix ? `${prefix}_` : ''}${safeName(stepName)}.png`);
 
@@ -725,9 +914,21 @@ class HeynaReporter {
     }
 
     static saveApiLogs(testCase, logs) {
-        const folder = path.join(this.getPaths().evidenceDir, testCase);
+        const folder = path.join(this.getPaths().evidenceDir, this.artifactTestCaseName(testCase));
         ensureDir(folder);
         writeJson(path.join(folder, 'api-log.json'), this.filterApiLogs(logs));
+    }
+
+    static artifactTestCaseName(testCase) {
+        const context = this.executionContexts.get(testCase);
+        const identity = context ? context.testIdentity : createTestIdentity({
+            projectRoot: this.config.projectRoot,
+            testCase,
+            project: process.env.HEYNA_PROJECT
+        });
+        const fingerprintValue = identity.testKey.slice('sha256:'.length);
+        if (identity.identityQuality === 'degraded') return `unidentified-${fingerprintValue.slice(0, 24)}`;
+        return safeName(identity.title) || `test-${fingerprintValue.slice(0, 24)}`;
     }
 
     static updateMetadata(updates = {}) {

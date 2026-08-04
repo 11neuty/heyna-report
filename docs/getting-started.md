@@ -122,6 +122,16 @@ node regenerate-report.js
 
 If the execution files do not exist, rerun `npm test`.
 
-### Framework tests leave output in the repository
+### Framework tests leave temporary output after interruption
 
-Framework-only commands normally use an isolated temporary artifact root and remove it during teardown. If a run is interrupted, verify `git status --short --ignored` and remove only confirmed generated output directories.
+Repository Playwright self-test invocations use marker-owned roots below the operating-system temporary directory. Normal cleanup runs in the cleanup reporter's `onExit()` hook, after other reporters finish; global teardown does not delete the root. User-configured artifact roots are never cleanup-owned.
+
+SIGINT or SIGTERM may prevent normal cleanup when Playwright cannot complete its reporter lifecycle. SIGKILL cannot run reporter hooks and may therefore leave an owned temporary root. Future test runs do not sweep old roots.
+
+Before manually deleting a leftover root, verify all of the following:
+
+- its leaf name begins with the strict `heyna-framework-test-` prefix;
+- it contains a regular `.heyna-test-root.json` marker using the supported schema; and
+- the marker's `rootName` exactly matches the directory leaf name.
+
+Do not delete other temporary-directory descendants or infer ownership from location alone.

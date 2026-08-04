@@ -3,9 +3,15 @@ const path = require('path');
 const { test, expect } = require('@playwright/test');
 const Heyna = require('../../utils/HeynaReporter');
 const HeynaPdfGenerator = require('../../utils/HeynaPdfGenerator');
+const { createTestIdentity } = require('../../utils/FailureIdentity');
 
 const PASSED = 'PASSED';
 const FAILED = 'FAILED';
+
+function degradedRecord(data, testCase) {
+    const testKey = createTestIdentity({ testCase }).testKey;
+    return data.find(item => item.testIdentity && item.testIdentity.testKey === testKey);
+}
 
 test.describe('trace detection', () => {
     test('detectTrace returns traceAvailable:true when trace.zip exists', async ({ page }, testInfo) => {
@@ -57,7 +63,8 @@ test.describe('completeTest trace persistence', () => {
 
         Heyna.completeTest('TC_TraceTest', PASSED, 100, null, { testInfo });
         const data = Heyna.getExecutionData();
-        const tc = data.find(t => t.testCase === 'TC_TraceTest');
+        const tc = data.find(t => t.testIdentity && t.testIdentity.title === testInfo.title);
+        expect(tc.testCase).toBe(testInfo.title);
         expect(tc.traceAvailable).toBe(true);
         expect(tc.traceFile).toBeTruthy();
         expect(tc.traceSize).toBeGreaterThan(0);
@@ -66,7 +73,7 @@ test.describe('completeTest trace persistence', () => {
     test('stores traceAvailable:false when no trace', () => {
         Heyna.completeTest('TC_NoTrace', PASSED, 100, null, {});
         const data = Heyna.getExecutionData();
-        const tc = data.find(t => t.testCase === 'TC_NoTrace');
+        const tc = degradedRecord(data, 'TC_NoTrace');
         expect(tc.traceAvailable).toBe(false);
         expect(tc.traceFile).toBeUndefined();
     });
@@ -74,7 +81,7 @@ test.describe('completeTest trace persistence', () => {
     test('backward compatible - no extra.traceInfo still works', () => {
         Heyna.completeTest('TC_Legacy', PASSED, 100, null, {});
         const data = Heyna.getExecutionData();
-        const tc = data.find(t => t.testCase === 'TC_Legacy');
+        const tc = degradedRecord(data, 'TC_Legacy');
         expect(tc.traceAvailable).toBe(false);
         expect(tc.status).toBe(PASSED);
     });
@@ -84,7 +91,7 @@ test.describe('completeTest trace persistence', () => {
             failureScreenshot: 'evidence/test/fail.png'
         });
         const data = Heyna.getExecutionData();
-        const tc = data.find(t => t.testCase === 'TC_TraceAndScreenshot');
+        const tc = degradedRecord(data, 'TC_TraceAndScreenshot');
         expect(tc.failureScreenshot).toBe('evidence/test/fail.png');
         expect(tc.traceAvailable).toBe(false);
     });

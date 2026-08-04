@@ -4,10 +4,12 @@ const path = require('path');
 const { test, expect } = require('@playwright/test');
 const HistoryManager = require('../../utils/HistoryManager');
 const HistoricalMetricsAggregator = require('../../utils/HistoricalMetricsAggregator');
+const PassRateTrendAnalyzer = require('../../utils/PassRateTrendAnalyzer');
 const Heyna = require('../../utils/HeynaReporter');
 const { mergeHistoryConfig, resolveArtifactPaths } = require('../../utils/ArtifactPaths');
 const { atomicWriteJson } = require('../../utils/JsonFile');
 const { validateSummary } = require('../../utils/HistoryValidation');
+const { buildFailureIndex, validateFailureIndex } = require('../../utils/HistoricalFailureValidation');
 const { runTeardown } = require('../../heyna.global-teardown');
 
 const temporaryRoots = new Set();
@@ -459,7 +461,8 @@ test('missing history root is empty for both listing APIs', async () => {
         discoveredRunCount: 0,
         validRunCount: 0,
         excludedRunCount: 0,
-        diagnostics: []
+        diagnostics: [],
+        retention: { enabled: false, maxRuns: null, maxAgeDays: null }
     });
 });
 
@@ -539,4 +542,165 @@ test('root enumeration failures preserve safe native codes and sanitize malforme
             }
         }
     }
+});
+
+test('failure index is an independently checksummed core sidecar and survives disabled raw execution storage', async () => {
+    const manager = managerFor(temporaryRoot(), { artifacts: { execution: false, metadata: false, pdf: false, dashboard: false, evidence: false, traces: false } });
+    const result = await manager.persistRun({
+        execution: [{
+            testCase: 'TC_Failure', status: 'FAILED', duration: 10, traceAvailable: false,
+            failureCategory: 'ASSERTION_FAILURE', errorMessage: 'expect(page).toHaveURL expected checkout'
+        }],
+        metadata: metadata()
+    });
+    const indexFile = path.join(result.directory, 'failure-index.json');
+    const index = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
+    const summary = JSON.parse(fs.readFileSync(path.join(result.directory, 'summary.json'), 'utf8'));
+    const manifest = JSON.parse(fs.readFileSync(path.join(result.directory, 'manifest.json'), 'utf8'));
+    expect(fs.existsSync(path.join(result.directory, 'execution.json'))).toBe(false);
+    expect(index).toMatchObject({ failureIndexSchemaVersion: '1.0.0', counts: { indexedTests: 1, indexedFailures: 1 } });
+    expect(summary.schemaVersion).toBe('1.0.0');
+    expect(summary.failureIndex).toMatchObject({
+        schemaVersion: '1.0.0', path: 'failure-index.json',
+        size: fs.statSync(indexFile).size, indexedTestCount: 1, indexedFailureCount: 1
+    });
+    expect(summary.failureIndex.checksum).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(manifest.artifacts.some(item => item.path === 'failure-index.json')).toBe(false);
+    expect((await manager.getRun(result.runId)).failureIndex.counts.indexedFailures).toBe(1);
+});
+
+test('duplicate finalized tuples fail before publication while project and repeatEach remain distinct', async () => {
+    const failed = {
+        testCase: 'TC_Duplicate', project: 'A', repeatEachIndex: 0, retryCount: 2,
+        status: 'FAILED', duration: 10, traceAvailable: false,
+        failureCategory: 'ASSERTION_FAILURE', errorMessage: 'expected checkout'
+    };
+    for (const duplicate of [
+        { ...failed },
+        { ...failed, status: 'PASSED', failureCategory: undefined, errorMessage: undefined }
+    ]) {
+        const manager = managerFor(temporaryRoot());
+        await expect(manager.persistRun({ execution: [failed, duplicate], metadata: metadata() }))
+            .rejects.toMatchObject({ code: 'HEYNA_FAILURE_HISTORY_DUPLICATE_OUTCOME' });
+        expect(fs.existsSync(manager.paths.historyRunsDir) ? fs.readdirSync(manager.paths.historyRunsDir) : []).toEqual([]);
+        expect(fs.existsSync(manager.paths.historyTempDir) ? fs.readdirSync(manager.paths.historyTempDir) : []).toEqual([]);
+    }
+
+    const manager = managerFor(temporaryRoot());
+    const persisted = await manager.persistRun({
+        execution: [
+            failed,
+            { ...failed, repeatEachIndex: 1 },
+            { ...failed, project: 'B' }
+        ],
+        metadata: metadata()
+    });
+    const index = (await manager.getRun(persisted.runId)).failureIndex;
+    expect(index.counts).toEqual({ indexedTests: 3, indexedFailures: 3 });
+    expect(new Set(index.testOutcomes.map(item => `${item.project}:${item.repeatEachIndex}`))).toEqual(new Set(['A:0', 'A:1', 'B:0']));
+});
+
+test('failure-index validation is descriptor-first and independently rejects duplicate and exotic data', () => {
+    const value = buildFailureIndex({
+        runId: '20260701-000000-000-aaaaaaaa',
+        timestamp: '2026-07-01T00:00:00.000Z',
+        execution: [{ testCase: 'TC', status: 'PASSED', traceAvailable: false }],
+        metadata: { project: 'P' }
+    });
+    const duplicate = { ...value, testOutcomes: [value.testOutcomes[0], { ...value.testOutcomes[0] }], counts: { indexedTests: 2, indexedFailures: 0 } };
+    expect(() => validateFailureIndex(duplicate)).toThrow(expect.objectContaining({ code: 'HEYNA_FAILURE_HISTORY_DUPLICATE_OUTCOME' }));
+
+    let getterCalls = 0;
+    const getterCounts = {};
+    Object.defineProperties(getterCounts, {
+        indexedTests: { enumerable: true, get() { getterCalls += 1; return 1; } },
+        indexedFailures: { enumerable: true, value: 0 }
+    });
+    expect(() => validateFailureIndex({ ...value, counts: getterCounts })).toThrow(expect.objectContaining({ code: 'HEYNA_FAILURE_HISTORY_INVALID_INDEX' }));
+    expect(getterCalls).toBe(0);
+
+    const sparse = new Array(1);
+    expect(() => validateFailureIndex({ ...value, testOutcomes: sparse, counts: { indexedTests: 1, indexedFailures: 0 } }))
+        .toThrow(expect.objectContaining({ code: 'HEYNA_FAILURE_HISTORY_INVALID_INDEX' }));
+    class Outcomes extends Array {}
+    expect(() => validateFailureIndex({ ...value, testOutcomes: new Outcomes(value.testOutcomes[0]) }))
+        .toThrow(expect.objectContaining({ code: 'HEYNA_FAILURE_HISTORY_INVALID_INDEX' }));
+});
+
+test('failure-index construction canonicalizes adversarial outcome order for linear readers', () => {
+    const execution = [
+        { testCase: 'TC_Canonical_Z', project: 'P', repeatEachIndex: 2, status: 'PASSED', traceAvailable: false },
+        { testCase: 'TC_Canonical_A', project: 'P', repeatEachIndex: 1, status: 'PASSED', traceAvailable: false },
+        { testCase: 'TC_Canonical_A', project: 'P', repeatEachIndex: 0, status: 'PASSED', traceAvailable: false }
+    ];
+    const value = buildFailureIndex({
+        runId: '20260701-000000-000-c0decafe',
+        timestamp: '2026-07-01T00:00:00.000Z',
+        execution,
+        metadata: { project: 'P' }
+    });
+    const tuples = value.testOutcomes.map(item => `${item.project}\0${item.testKey}\0${item.repeatEachIndex}`);
+    expect(tuples).toEqual(tuples.slice().sort());
+    const reversed = { ...value, testOutcomes: value.testOutcomes.slice().reverse() };
+    expect(() => validateFailureIndex(reversed)).toThrow(/canonical project, testKey, and repeatEachIndex order/);
+});
+
+test('new failure descriptor remains compatible with history, metrics, and pass-rate trend schema 1.0.0 readers', async () => {
+    const manager = managerFor(temporaryRoot());
+    const persisted = await manager.persistRun({ execution: execution('FAILED'), metadata: metadata() });
+    expect(validateSummary(persisted.summary).failureIndex).toBeTruthy();
+    const aggregator = new HistoricalMetricsAggregator({ historyManager: manager, clock: () => new Date('2026-07-21T00:00:00Z') });
+    const aggregate = await aggregator.aggregate();
+    expect(aggregate).toMatchObject({ aggregationSchemaVersion: '1.0.0', runCount: 1 });
+    const trend = await new PassRateTrendAnalyzer({ historicalMetricsAggregator: aggregator }).analyze({ granularity: 'run' });
+    expect(trend).toMatchObject({ trendSchemaVersion: '1.0.0', pointCount: 1 });
+
+    fs.appendFileSync(path.join(persisted.directory, 'failure-index.json'), '\ncorrupt');
+    expect((await manager.listRunsWithDiagnostics()).runs).toHaveLength(1);
+    expect((await aggregator.aggregate()).runCount).toBe(1);
+    expect((await new PassRateTrendAnalyzer({ historicalMetricsAggregator: aggregator }).analyze({ granularity: 'run' })).pointCount).toBe(1);
+    expect((await manager.getRun(persisted.runId)).failureIndexDiagnostic.code).toBe('HEYNA_FAILURE_HISTORY_INVALID_INDEX');
+});
+
+test('failure index publication is atomic, latest-neutral, and retention removes it only with its run', async () => {
+    const manager = managerFor(temporaryRoot(), { retention: { enabled: false } });
+    const first = await manager.persistRun({ execution: execution('FAILED'), metadata: metadata('2026-07-01T00:00:00Z') });
+    const second = await manager.persistRun({ execution: execution('PASSED'), metadata: metadata('2026-07-02T00:00:00Z') });
+    expect(fs.readdirSync(manager.paths.historyTempDir)).toEqual([]);
+    expect((await manager.getLatestRun()).runId).toBe(second.runId);
+    expect(fs.existsSync(path.join(first.directory, 'failure-index.json'))).toBe(true);
+    manager.config.retention = { enabled: true, maxRuns: 1, maxAgeDays: null };
+    await manager.enforceRetention();
+    expect(fs.existsSync(first.directory)).toBe(false);
+    expect(fs.existsSync(path.join(second.directory, 'failure-index.json'))).toBe(true);
+    expect((await manager.getLatestRun()).runId).toBe(second.runId);
+});
+
+test('reporter separates project, repeatEach, and colliding labels while collapsing retries', () => {
+    const root = temporaryRoot();
+    Heyna.configure({ artifactRoot: root });
+    Heyna.initializeRun({ reset: true, project: 'Reporter Identity' });
+    const fileA = path.join(process.cwd(), 'tests', 'a.spec.js');
+    const fileB = path.join(process.cwd(), 'tests', 'b.spec.js');
+    const info = (project, file, repeatEachIndex, retry = 0) => ({
+        project: { name: project }, file, title: 'same title', titlePath: [path.basename(file), 'Suite', 'same title'],
+        line: 10, testId: `${project}-${path.basename(file)}`, repeatEachIndex, retry,
+        outputDir: path.join(root, 'outputs', `${project}-${repeatEachIndex}-${retry}`), error: undefined
+    });
+    const execute = (testInfo, status = 'PASSED') => {
+        Heyna.initializeTest('same_title', { testInfo, retry: testInfo.retry, repeatEachIndex: testInfo.repeatEachIndex });
+        Heyna.completeTest('same_title', status, 1, status === 'FAILED' ? 'expect(page).toHaveURL expected x' : undefined, { testInfo });
+    };
+    execute(info('A', fileA, 0), 'FAILED');
+    execute(info('A', fileA, 0, 1), 'PASSED');
+    execute(info('A', fileA, 1));
+    execute(info('B', fileA, 0));
+    execute(info('A', fileB, 0));
+    const data = Heyna.getExecutionData();
+    expect(data).toHaveLength(4);
+    const retried = data.find(item => item.project === 'A' && item.testIdentity.file === 'tests/a.spec.js' && item.repeatEachIndex === 0);
+    expect(retried).toMatchObject({ status: 'PASSED', retryCount: 1 });
+    expect(retried.attempts).toHaveLength(2);
+    expect(new Set(data.map(item => item.executionKey)).size).toBe(4);
+    expect(data.every(item => item.testIdentity && item.executionKey)).toBe(true);
 });

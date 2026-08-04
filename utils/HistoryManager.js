@@ -15,6 +15,11 @@ const {
     validateManifest,
     validateSummary
 } = require('./HistoryValidation');
+const {
+    buildFailureIndex,
+    createFailureIndexDescriptor,
+    readAndValidateFailureIndex
+} = require('./HistoricalFailureValidation');
 
 const SCHEMA_VERSION = '1.0.0';
 const HISTORY_FORMAT_VERSION = 1;
@@ -125,6 +130,31 @@ function countFiles(target, fileSystem = fs) {
     if (!stat.isDirectory()) return 0;
     return fileSystem.readdirSync(target, { withFileTypes: true })
         .reduce((total, entry) => total + countFiles(path.join(target, entry.name), fileSystem), 0);
+}
+
+function failureIndexDiagnostic(error) {
+    if (error && error.code === 'HEYNA_FAILURE_HISTORY_UNSUPPORTED_INDEX_SCHEMA') {
+        return {
+            code: 'HEYNA_FAILURE_HISTORY_UNSUPPORTED_INDEX_SCHEMA',
+            message: 'Historical run uses an unsupported failure index schema.'
+        };
+    }
+    if (error && error.code === 'ENOENT') {
+        return {
+            code: 'HEYNA_FAILURE_HISTORY_MISSING_INDEX',
+            message: 'Historical run is missing its declared failure index.'
+        };
+    }
+    if (error && ['EACCES', 'EPERM', 'EIO', 'EISDIR', 'ENOTDIR'].includes(error.code)) {
+        return {
+            code: 'HEYNA_FAILURE_HISTORY_UNREADABLE_INDEX',
+            message: 'Historical run failure index could not be read.'
+        };
+    }
+    return {
+        code: 'HEYNA_FAILURE_HISTORY_INVALID_INDEX',
+        message: 'Historical run contains an invalid failure index.'
+    };
 }
 
 class HistoryManager {
@@ -255,6 +285,16 @@ class HistoryManager {
 
         try {
             ensureDir(temporaryDir, this.fs);
+            const failureIndex = buildFailureIndex({
+                runId,
+                timestamp: summary.timestamp,
+                execution,
+                metadata,
+                projectRoot: this.paths.projectRoot
+            });
+            const failureIndexFile = path.join(temporaryDir, 'failure-index.json');
+            this.writeJson(failureIndexFile, failureIndex);
+            summary.failureIndex = createFailureIndexDescriptor(failureIndexFile, failureIndex, this.fs);
             if (this.config.artifacts.execution) {
                 this.writeJson(path.join(temporaryDir, 'execution.json'), execution);
                 this.addManifestEntry(manifest, temporaryDir, 'execution', 'execution.json');
@@ -377,6 +417,7 @@ class HistoryManager {
         const schema = readJson(path.join(runDir, 'schema.json'), undefined, this.fs);
         const manifest = readJson(path.join(runDir, 'manifest.json'), undefined, this.fs);
         validateSummary(summary, { expectedRunId: path.basename(runDir) });
+        readAndValidateFailureIndex(summary, runDir, this.fs);
         validateManifest(manifest, runDir, this.fs);
         if (!schema || schema.schemaVersion !== SCHEMA_VERSION || !schema.heynaVersion) throw new Error('Staged schema failed validation.');
         if (this.config.artifacts.execution && !Array.isArray(readJson(path.join(runDir, 'execution.json'), undefined, this.fs))) throw new Error('Staged execution.json must contain an array.');
@@ -529,6 +570,18 @@ class HistoryManager {
 
     async listRunsWithDiagnostics() {
         const result = this.scanRunSummariesWithDiagnostics();
+        const configuredMaxRuns = this.config.retention.maxRuns;
+        const configuredMaxAgeDays = this.config.retention.maxAgeDays;
+        const retention = Object.freeze({
+            enabled: this.config.retention.enabled === true,
+            maxRuns: Number.isSafeInteger(configuredMaxRuns) && configuredMaxRuns >= 0 && !Object.is(configuredMaxRuns, -0)
+                ? configuredMaxRuns
+                : null,
+            maxAgeDays: typeof configuredMaxAgeDays === 'number' && Number.isFinite(configuredMaxAgeDays)
+                && configuredMaxAgeDays >= 0 && !Object.is(configuredMaxAgeDays, -0)
+                ? configuredMaxAgeDays
+                : null
+        });
         return {
             runs: result.runs.slice(),
             discoveredRunCount: result.discoveredRunCount,
@@ -537,7 +590,8 @@ class HistoryManager {
             diagnostics: result.diagnostics.map(diagnostic => ({
                 ...diagnostic,
                 details: { ...diagnostic.details }
-            }))
+            })),
+            retention
         };
     }
 
@@ -570,6 +624,13 @@ class HistoryManager {
             schema: readJson(path.join(runDir, 'schema.json'), undefined, this.fs),
             manifest
         };
+        if (summary.failureIndex !== undefined) {
+            try {
+                value.failureIndex = readAndValidateFailureIndex(summary, runDir, this.fs);
+            } catch (error) {
+                value.failureIndexDiagnostic = failureIndexDiagnostic(error);
+            }
+        }
         const executionFile = path.join(runDir, 'execution.json');
         const metadataFile = path.join(runDir, 'metadata.json');
         if (this.fs.existsSync(executionFile)) value.execution = readJson(executionFile, undefined, this.fs);

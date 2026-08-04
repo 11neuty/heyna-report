@@ -2,7 +2,7 @@
 
 HEYNA REPORT v2.4.0-next.0 contains the unreleased execution-history storage contract for the GitHub v2.4.0 milestone. Current-run `test-results/execution.json`, `test-results/metadata.json`, PDF, dashboard, evidence, and trace APIs keep their existing locations and formats.
 
-Architecture rationale is recorded in the [execution-history storage ADR](adr/execution-history-storage.md). Historical consumers should use the [Historical Metrics Aggregation](historical-metrics-aggregation.md) contract rather than reading run directories directly.
+Architecture rationale is recorded in the [execution-history storage ADR](adr/execution-history-storage.md). Aggregate consumers should use the [Historical Metrics Aggregation](historical-metrics-aggregation.md) contract, and recurring-failure consumers should use the [Failure Trends](failure-trends.md) contract rather than reading run directories directly.
 
 ## Opt-in configuration
 
@@ -53,6 +53,7 @@ history/
 |   |-- summary.json
 |   |-- schema.json
 |   |-- manifest.json
+|   |-- failure-index.json
 |   |-- execution.json
 |   |-- metadata.json
 |   `-- artifacts/
@@ -81,6 +82,10 @@ unsuccessful = failed + timedOut + interrupted
 `traceReportedCount` counts execution records that reported a trace. `tracePreservedCount` counts trace files actually copied into the completed run. The compatibility field `traceAvailableCount` equals `tracePreservedCount` and never claims a missing source was preserved.
 
 The current-run `HeynaReporter.getSummary()` remains compatible: its `passRate` is a two-decimal string, while historical `summary.json` uses a number. Both expose the canonical status fields and `unsuccessful`. Consumers migrating to history should parse current-run `passRate` or use the numeric historical value.
+
+Every newly published enabled-history run also contains an independently versioned `failure-index.json`. The sidecar stores every finalized test outcome using deterministic, privacy-reduced test and failure fingerprints so a reader can distinguish a known absence from missing detail. It is built and strictly validated in the staging directory, included in the same atomic directory rename, remains present when raw `execution.json` preservation is disabled, and is removed only with its owning run.
+
+`summary.json` may contain a `failureIndex` descriptor with schema version, fixed relative path, byte size, SHA-256 checksum, and indexed test/failure counts. This additive descriptor does not change history schema `1.0.0` or the history format version. Old summaries remain valid. The sidecar is not a manifest artifact type and a corrupt sidecar does not invalidate an otherwise usable summary for metrics or pass-rate analysis. See [Failure Trends](failure-trends.md) for its independent schema, privacy limits, and degraded legacy behavior.
 
 ## Manifest contract
 
@@ -120,10 +125,10 @@ const inclusiveRange = await history.queryRunsByDateRange(
 );
 ```
 
-`listRunsWithDiagnostics()` preserves the summary-only read boundary while reporting completed directories that cannot be used. It is always a complete, newest-first, unfiltered scan; filtering and limits belong to `HistoricalMetricsAggregator`, while the existing `listRuns()` retains its selection options. The diagnostic result returns `runs`, `discoveredRunCount`, `validRunCount`, `excludedRunCount`, and JSON-safe diagnostics that distinguish missing summary files, corrupt JSON, unsupported schemas, invalid summary contracts, and unreadable runs. Its invariants are `discoveredRunCount === validRunCount + excludedRunCount`, `runs.length === validRunCount`, and `diagnostics.length === excludedRunCount`. Diagnostics contain stable messages, relative `summary.json` references, and whitelisted I/O codes rather than native error text or absolute paths. A missing history root returns an empty list; any other root enumeration failure throws with its native code preserved, `heynaCode: 'HEYNA_HISTORY_ENUMERATION_FAILED'`, and the original error as `cause`. Existing `listRuns()` normal-path behavior, return type, finite non-negative integer limit compatibility, and retention `maxRuns` compatibility are unchanged.
+`listRunsWithDiagnostics()` preserves the summary-only read boundary while reporting completed directories that cannot be used. It is always a complete, newest-first, unfiltered scan; filtering and limits belong to `HistoricalMetricsAggregator`, while the existing `listRuns()` retains its selection options. The diagnostic result returns `runs`, `discoveredRunCount`, `validRunCount`, `excludedRunCount`, JSON-safe diagnostics, and an additive immutable `retention` descriptor containing only `enabled`, `maxRuns`, and `maxAgeDays`. This lets public consumers explain retained-window limitations without reading manager configuration. Its invariants are `discoveredRunCount === validRunCount + excludedRunCount`, `runs.length === validRunCount`, and `diagnostics.length === excludedRunCount`. Diagnostics contain stable messages, relative `summary.json` references, and whitelisted I/O codes rather than native error text or absolute paths. A missing history root returns an empty list; any other root enumeration failure throws with its native code preserved, `heynaCode: 'HEYNA_HISTORY_ENUMERATION_FAILED'`, and the original error as `cause`. Existing `listRuns()` normal-path behavior, return type, finite non-negative integer limit compatibility, and retention `maxRuns` compatibility are unchanged.
 
 New summary writes accumulate each canonical duration as exact thousandth-millisecond `BigInt` units before converting the total back to a public number. The stored schema remains `1.0.0`; its reader still accepts the original finite non-negative numeric contract. Historical floating-point totals are not rewritten or classified as corrupt. The aggregation layer may recognize and explicitly normalize the narrow old-writer artifact signature, accompanied by `HEYNA_HISTORICAL_DURATION_NORMALIZED`.
 
 Historical metrics consumers should use `HistoricalMetricsAggregator` rather than scanning `history/runs` or averaging stored derived values. See [Historical Metrics Aggregation](historical-metrics-aggregation.md).
 
-This storage component stores immutable runs and does not aggregate them itself. The separate `HistoricalMetricsAggregator` provides summary-only factual aggregation; trends, comparisons, dashboards, databases, HTTP endpoints, and module-system migrations remain out of scope.
+This storage component stores immutable runs and does not aggregate them itself. `HistoricalMetricsAggregator` provides summary-only factual aggregation, while `HistoricalFailureReader` validates per-run failure detail for `FailureTrendAnalyzer`. No mutable cross-run database, HTTP endpoint, CLI, dashboard integration, or module-system migration is introduced.

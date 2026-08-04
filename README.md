@@ -49,6 +49,7 @@ node regenerate-report.js
 - Opt-in immutable execution history with retention and migration support
 - Read-only historical metrics aggregation
 - Weighted pass-rate trend analysis
+- Privacy-reduced recurring-failure analysis across retained immutable runs
 
 ## Documentation
 
@@ -59,6 +60,7 @@ node regenerate-report.js
 - [Execution history storage](docs/history-storage.md)
 - [Historical metrics aggregation](docs/historical-metrics-aggregation.md)
 - [Pass-rate trends](docs/pass-rate-trends.md)
+- [Failure trends and recurring issues](docs/failure-trends.md)
 - [Changelog](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)
 

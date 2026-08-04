@@ -49,7 +49,68 @@ test('path separators normalize and traversal is rejected', () => {
     const windows = createTestIdentity({ projectRoot, testInfo: info({ file: 'tests\\checkout.spec.js' }) });
     const portable = createTestIdentity({ projectRoot, testInfo: info({ file: 'tests/checkout.spec.js' }) });
     expect(windows.testKey).toBe(portable.testKey);
-    expect(() => createTestIdentity({ projectRoot, testInfo: info({ file: '../outside.spec.js' }) })).toThrow(/inside projectRoot/);
+    expect(windows.file).toBe('tests/checkout.spec.js');
+    expect(portable.file).toBe('tests/checkout.spec.js');
+
+    const nested = [
+        'tests\\checkout\\payment.spec.js',
+        'tests/checkout/payment.spec.js',
+        'tests\\checkout/payment.spec.js'
+    ].map(file => createTestIdentity({ projectRoot, testInfo: info({ file }) }));
+    expect(new Set(nested.map(identity => identity.testKey)).size).toBe(1);
+    for (const identity of nested) expect(identity.file).toBe('tests/checkout/payment.spec.js');
+
+    const repeated = [
+        'tests//checkout.spec.js',
+        'tests\\\\checkout.spec.js',
+        'tests\\/checkout.spec.js'
+    ].map(file => createTestIdentity({ projectRoot, testInfo: info({ file }) }));
+    expect(new Set(repeated.map(identity => identity.testKey)).size).toBe(1);
+    for (const identity of repeated) expect(identity.file).toBe('tests/checkout.spec.js');
+
+    for (const file of [
+        '../outside.spec.js',
+        '..\\outside.spec.js',
+        'tests/../../outside.spec.js',
+        'tests\\..\\..\\outside.spec.js',
+        'tests\\checkout/../../../outside.spec.js',
+        path.resolve(projectRoot, '..', 'outside.spec.js')
+    ]) {
+        expect(() => createTestIdentity({ projectRoot, testInfo: info({ file }) })).toThrow(/inside projectRoot/);
+    }
+
+    for (const file of ['', '   ', 0, false, {}, []]) {
+        expect(() => createTestIdentity({ projectRoot, testInfo: info({ file }) })).toThrow(/test file/);
+    }
+});
+
+test('equivalent separator inputs preserve lifecycle execution identity', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'heyna separator identity '));
+    const testCase = 'separator lifecycle identity';
+    const backslashInfo = info({ file: 'tests\\checkout.spec.js' });
+    const portableInfo = info({ file: 'tests/checkout.spec.js' });
+
+    try {
+        Heyna.configure({ projectRoot, artifactRoot: root, history: { enabled: false } });
+        Heyna.initializeRun({ reset: true, project: 'Separator identity' });
+        Heyna.initializeTest(testCase, { testInfo: backslashInfo });
+        const initialized = Heyna.getExecutionData();
+        expect(initialized).toHaveLength(1);
+        const executionKey = initialized[0].executionKey;
+        const testKey = initialized[0].testIdentity.testKey;
+
+        Heyna.completeTest(testCase, 'PASSED', 1, undefined, { testInfo: portableInfo });
+        const completed = Heyna.getExecutionData();
+        expect(completed).toHaveLength(1);
+        expect(completed[0]).toMatchObject({
+            executionKey,
+            testIdentity: { testKey, file: 'tests/checkout.spec.js' }
+        });
+    } finally {
+        Heyna.completeRun();
+        Heyna.configure({ projectRoot, artifactRoot: process.env.HEYNA_ARTIFACT_ROOT || projectRoot });
+        fs.rmSync(root, { recursive: true, force: true });
+    }
 });
 
 test('fallback identity is deterministic and explicitly degraded', () => {

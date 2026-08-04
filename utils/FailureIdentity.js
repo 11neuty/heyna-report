@@ -71,10 +71,21 @@ function normalizeProject(value) {
     return boundedString(value || 'Project', 'project', MAX_PROJECT_LENGTH);
 }
 
+function hostPathSeparators(value) {
+    return value.replace(/[\\/]/g, path.sep);
+}
+
 function containedRelativeFile(projectRoot, file) {
-    const root = path.resolve(projectRoot || process.cwd());
+    const root = path.resolve(hostPathSeparators(projectRoot || process.cwd()));
     const supplied = boundedString(file, 'test file', MAX_FILE_LENGTH);
-    const target = path.isAbsolute(supplied) ? path.resolve(supplied) : path.resolve(root, supplied);
+    const hostFile = hostPathSeparators(supplied);
+    const foreignAbsolute = path.sep === '/'
+        ? path.win32.isAbsolute(supplied)
+        : path.posix.isAbsolute(supplied);
+    if (foreignAbsolute && !path.isAbsolute(hostFile)) {
+        throw new TypeError('test file must resolve inside projectRoot.');
+    }
+    const target = path.resolve(root, hostFile);
     const relative = path.relative(root, target);
     if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
         throw new TypeError('test file must resolve inside projectRoot.');
@@ -96,8 +107,9 @@ function testInfoIdentityParts(testInfo) {
     const title = typeof testInfo.title === 'string' && testInfo.title.trim()
         ? testInfo.title
         : titlePath[titlePath.length - 1];
-    if (!testInfo.file || !title) return null;
-    const withoutFile = titlePath.length && path.basename(String(titlePath[0])) === path.basename(String(testInfo.file))
+    if ((testInfo.file === null || testInfo.file === undefined) || !title) return null;
+    const withoutFile = titlePath.length
+        && path.basename(hostPathSeparators(String(titlePath[0]))) === path.basename(hostPathSeparators(String(testInfo.file)))
         ? titlePath.slice(1)
         : titlePath;
     const suitePath = withoutFile.length && withoutFile[withoutFile.length - 1] === title

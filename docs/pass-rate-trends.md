@@ -184,4 +184,4 @@ Zero-test points are coalesced into one trend warning. Equivalent zero-baseline 
 
 ## Non-goals
 
-This module does not implement duration trends, recurring failures, execution comparison, quality narratives, dashboards, PDF or HTML integration, HTTP APIs, databases, forecasting, regression, missing-period interpolation, storage, retention, or migration.
+This module does not implement duration trends, recurring failures, execution comparison, quality narratives, dashboards, PDF or HTML integration, HTTP APIs, databases, forecasting, regression, missing-period interpolation, storage, retention, or migration. Duration trends are provided separately by [Execution Duration Trends](duration-trends.md).

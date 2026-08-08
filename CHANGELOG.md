@@ -12,6 +12,7 @@ Development work for the v2.4.0 milestone. No stable `v2.4.0` tag exists.
 - Summary diagnostics that distinguish missing, corrupt, invalid, unsupported, and unreadable historical runs.
 - Read-only historical metric queries and aggregation with weighted pass rates, exact fixed-scale duration arithmetic, UTC grouping, and partial-result warnings.
 - Read-only run/day/week/month pass-rate trends with chronological series, explicit comparisons, deterministic classification, moving weighted rates, and propagated data-quality warnings.
+- Read-only run/day/week/month wall-clock duration trends with run-weighted grouped points, exact comparisons, configurable previous-point spike detection, and zero-baseline safeguards.
 - Deterministic test/failure fingerprints, immutable per-run failure indexes, degraded legacy normalization, and read-only recurring-failure trends over retained history.
 - Isolated project and artifact roots for framework tests and embedded consumers.
 

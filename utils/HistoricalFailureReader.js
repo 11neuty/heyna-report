@@ -3,6 +3,7 @@ const {
     DUPLICATE_OUTCOME_CODE,
     validateFailureIndex
 } = require('./HistoricalFailureValidation');
+const { classifyFlakyAttemptHistory } = require('./FlakyAttemptHistory');
 const {
     FAILURE_HISTORY_SCHEMA_VERSION,
     cloneJsonValue,
@@ -134,6 +135,20 @@ function forceDegraded(index) {
             identityQuality: 'degraded',
             failure: outcome.failure ? { ...outcome.failure, signatureQuality: 'degraded' } : null
         }))
+    };
+}
+
+function publicOutcome(outcome) {
+    const { attempts, ...persisted } = outcome;
+    return {
+        ...persisted,
+        suitePath: outcome.suitePath.slice(),
+        failure: outcome.failure ? { ...outcome.failure } : null,
+        flakyClassification: classifyFlakyAttemptHistory({
+            finalStatus: outcome.status,
+            retryCount: outcome.retryCount,
+            attempts
+        })
     };
 }
 
@@ -287,11 +302,7 @@ class HistoricalFailureReader {
                 unsuccessfulTests: summary.unsuccessful,
                 migrated: Boolean(summary.migration),
                 detailStatus,
-                testOutcomes: index ? index.testOutcomes.map(outcome => ({
-                    ...outcome,
-                    suitePath: outcome.suitePath.slice(),
-                    failure: outcome.failure ? { ...outcome.failure } : null
-                })) : []
+                testOutcomes: index ? index.testOutcomes.map(publicOutcome) : []
             });
         }
 

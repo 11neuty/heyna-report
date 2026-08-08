@@ -3,8 +3,13 @@ const path = require('path');
 const { createFailureIdentity, createTestIdentity, HASH_PATTERN } = require('./FailureIdentity');
 const { fileChecksum } = require('./HistoryValidation');
 const { cloneJsonValue } = require('./FailureTrendValidation');
+const {
+    extractPersistedAttemptHistory,
+    validatePersistedAttemptHistory
+} = require('./FlakyAttemptHistory');
 
-const FAILURE_INDEX_SCHEMA_VERSION = '1.0.0';
+const CURRENT_FAILURE_INDEX_SCHEMA_VERSION = '2.0.0';
+const SUPPORTED_FAILURE_INDEX_SCHEMA_VERSIONS = Object.freeze(['1.0.0', '2.0.0']);
 const FINAL_STATUSES = new Set(['PASSED', 'FAILED', 'SKIPPED', 'TIMEDOUT', 'INTERRUPTED']);
 const UNSUCCESSFUL_STATUSES = new Set(['FAILED', 'TIMEDOUT', 'INTERRUPTED']);
 const FAILURE_CATEGORIES = new Set([
@@ -102,13 +107,15 @@ function validateFailure(value, context) {
     return value;
 }
 
-function validateOutcome(value, index) {
+function validateOutcome(value, index, schemaVersion = CURRENT_FAILURE_INDEX_SCHEMA_VERSION) {
     const context = `testOutcomes[${index}]`;
     if (!isPlainObject(value)) throw new TypeError(`${context} must be an object.`);
-    requireExactKeys(value, [
+    const expectedKeys = [
         'testKey', 'playwrightTestIdFingerprint', 'project', 'file', 'suitePath', 'title', 'line',
         'repeatEachIndex', 'retryCount', 'status', 'traceAvailable', 'identityQuality', 'failure'
-    ], context);
+    ];
+    if (schemaVersion === '2.0.0') expectedKeys.push('attempts');
+    requireExactKeys(value, expectedKeys, context);
     requireFingerprint(value.testKey, `${context}.testKey`);
     requireFingerprint(value.playwrightTestIdFingerprint, `${context}.playwrightTestIdFingerprint`, { nullable: true });
     requireBoundedString(value.project, `${context}.project`, 256);
@@ -128,6 +135,11 @@ function validateOutcome(value, index) {
     }
     if (UNSUCCESSFUL_STATUSES.has(value.status)) validateFailure(value.failure, `${context}.failure`);
     else if (value.failure !== null) throw new TypeError(`${context}.failure must be null for a successful/non-failure outcome.`);
+    if (schemaVersion === '2.0.0') validatePersistedAttemptHistory({
+        finalStatus: value.status,
+        retryCount: value.retryCount,
+        attempts: value.attempts
+    });
     return value;
 }
 
@@ -146,9 +158,10 @@ function validateFailureIndex(value, options = {}) {
     }
     if (!isPlainObject(value)) throw new TypeError('failure index must be an object.');
     requireExactKeys(value, ['failureIndexSchemaVersion', 'runId', 'timestamp', 'counts', 'testOutcomes'], 'failure index');
-    if (value.failureIndexSchemaVersion !== FAILURE_INDEX_SCHEMA_VERSION) {
+    if (!SUPPORTED_FAILURE_INDEX_SCHEMA_VERSIONS.includes(value.failureIndexSchemaVersion)) {
         throw indexError('HEYNA_FAILURE_HISTORY_UNSUPPORTED_INDEX_SCHEMA', 'Failure index uses an unsupported schema.');
     }
+    const schemaVersion = value.failureIndexSchemaVersion;
     requireBoundedString(value.runId, 'failureIndex.runId', 128);
     if (!RUN_ID.test(value.runId) || value.runId === '.' || value.runId === '..') throw new TypeError('failureIndex.runId is invalid.');
     if (options.expectedRunId && value.runId !== options.expectedRunId) throw new TypeError('failureIndex.runId does not match its run.');
@@ -165,7 +178,7 @@ function validateFailureIndex(value, options = {}) {
     let failureCount = 0;
     let previousOutcome = null;
     value.testOutcomes.forEach((item, index) => {
-        validateOutcome(item, index);
+        validateOutcome(item, index, schemaVersion);
         const tuple = `${item.project}\0${item.testKey}\0${item.repeatEachIndex}`;
         if (finalized.has(tuple)) throw duplicateOutcomeError();
         finalized.add(tuple);
@@ -202,7 +215,7 @@ function normalizedExistingIdentity(testCase, metadata, projectRoot) {
                 status: 'PASSED',
                 traceAvailable: false,
                 failure: null
-            }, 0);
+            }, 0, '1.0.0');
             return candidate;
         } catch (error) {
             // Fall through to a deterministic degraded identity.
@@ -242,6 +255,11 @@ function normalizedFailure(testCase, status, projectRoot) {
     return { ...derived, signatureQuality: 'degraded' };
 }
 
+function normalizedRetryCount(testCase, index) {
+    if (!testCase || !Object.prototype.hasOwnProperty.call(testCase, 'retryCount')) return 0;
+    return requireSafeCount(testCase.retryCount, `Execution item ${index} retryCount`);
+}
+
 function buildFailureIndex(options = {}) {
     const execution = options.execution;
     const metadata = options.metadata || {};
@@ -250,6 +268,7 @@ function buildFailureIndex(options = {}) {
         const status = canonicalStatus(testCase && testCase.status);
         if (!FINAL_STATUSES.has(status)) throw new TypeError(`Execution item ${index} has an unsupported final status.`);
         const identity = normalizedExistingIdentity(testCase, metadata, options.projectRoot);
+        const retryCount = normalizedRetryCount(testCase, index);
         return {
             testKey: identity.testKey,
             playwrightTestIdFingerprint: identity.playwrightTestIdFingerprint,
@@ -259,15 +278,20 @@ function buildFailureIndex(options = {}) {
             title: identity.title,
             line: identity.line,
             repeatEachIndex: Number.isSafeInteger(testCase.repeatEachIndex) && testCase.repeatEachIndex >= 0 ? testCase.repeatEachIndex : 0,
-            retryCount: Number.isSafeInteger(testCase.retryCount) && testCase.retryCount >= 0 ? testCase.retryCount : 0,
+            retryCount,
             status,
             traceAvailable: testCase.traceAvailable === true,
             identityQuality: identity.identityQuality,
-            failure: normalizedFailure(testCase, status, options.projectRoot)
+            failure: normalizedFailure(testCase, status, options.projectRoot),
+            attempts: extractPersistedAttemptHistory(testCase, {
+                finalStatus: status,
+                retryCount,
+                forceUnavailable: options.forceAttemptHistoryUnavailable === true
+            })
         };
     }).sort(compareOutcomeOrder);
     const result = {
-        failureIndexSchemaVersion: FAILURE_INDEX_SCHEMA_VERSION,
+        failureIndexSchemaVersion: CURRENT_FAILURE_INDEX_SCHEMA_VERSION,
         runId: options.runId,
         timestamp: options.timestamp,
         counts: {
@@ -323,7 +347,7 @@ function buildLegacyFailureIndex(options = {}) {
     }
     const testOutcomes = [...byTuple.values()].sort(compareOutcomeOrder);
     const index = validateFailureIndex({
-        failureIndexSchemaVersion: FAILURE_INDEX_SCHEMA_VERSION,
+        failureIndexSchemaVersion: '1.0.0',
         runId: options.runId,
         timestamp: options.timestamp,
         counts: {
@@ -339,7 +363,7 @@ function createFailureIndexDescriptor(file, index, fileSystem = fs) {
     const stat = fileSystem.statSync(file);
     if (!stat.isFile() || !Number.isSafeInteger(stat.size) || stat.size < 0) throw new TypeError('failure index must be a safely sized file.');
     return {
-        schemaVersion: FAILURE_INDEX_SCHEMA_VERSION,
+        schemaVersion: index.failureIndexSchemaVersion,
         path: 'failure-index.json',
         size: stat.size,
         checksum: `sha256:${fileChecksum(file, fileSystem)}`,
@@ -353,7 +377,7 @@ function validateFailureIndexDescriptor(descriptor) {
     requireExactKeys(descriptor, [
         'schemaVersion', 'path', 'size', 'checksum', 'indexedTestCount', 'indexedFailureCount'
     ], 'summary.failureIndex');
-    if (descriptor.schemaVersion !== FAILURE_INDEX_SCHEMA_VERSION) {
+    if (!SUPPORTED_FAILURE_INDEX_SCHEMA_VERSIONS.includes(descriptor.schemaVersion)) {
         const error = new TypeError(`Unsupported failure index schema: ${descriptor.schemaVersion}`);
         error.code = 'HEYNA_FAILURE_HISTORY_UNSUPPORTED_INDEX_SCHEMA';
         throw error;
@@ -387,6 +411,9 @@ function readAndValidateFailureIndex(summary, runDir, fileSystem = fs) {
         throw wrapped;
     }
     validateFailureIndex(value, { expectedRunId: summary.runId, expectedTimestamp: summary.timestamp });
+    if (descriptor.schemaVersion !== value.failureIndexSchemaVersion) {
+        throw new TypeError('failure index descriptor schema does not match the index.');
+    }
     if (descriptor.indexedTestCount !== value.counts.indexedTests
         || descriptor.indexedFailureCount !== value.counts.indexedFailures) {
         throw new TypeError('failure index descriptor counts do not match the index.');
@@ -395,8 +422,10 @@ function readAndValidateFailureIndex(summary, runDir, fileSystem = fs) {
 }
 
 module.exports = {
+    CURRENT_FAILURE_INDEX_SCHEMA_VERSION,
     DUPLICATE_OUTCOME_CODE,
-    FAILURE_INDEX_SCHEMA_VERSION,
+    FAILURE_INDEX_SCHEMA_VERSION: CURRENT_FAILURE_INDEX_SCHEMA_VERSION,
+    SUPPORTED_FAILURE_INDEX_SCHEMA_VERSIONS,
     UNSUCCESSFUL_STATUSES,
     buildFailureIndex,
     buildLegacyFailureIndex,

@@ -51,6 +51,7 @@ node regenerate-report.js
 - Weighted pass-rate trend analysis
 - Wall-clock execution duration trends with deterministic spike detection
 - Privacy-reduced recurring-failure analysis across retained immutable runs
+- Durable privacy-reduced retry status history with known/unknown flaky classification
 
 ## Documentation
 
@@ -63,6 +64,7 @@ node regenerate-report.js
 - [Pass-rate trends](docs/pass-rate-trends.md)
 - [Execution duration trends](docs/duration-trends.md)
 - [Failure trends and recurring issues](docs/failure-trends.md)
+- [Durable flaky attempt history](docs/flaky-attempt-history.md)
 - [Changelog](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)
 

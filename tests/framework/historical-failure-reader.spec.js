@@ -7,6 +7,7 @@ const HistoricalFailureReader = require('../../utils/HistoricalFailureReader');
 const FailureTrendAnalyzer = require('../../utils/FailureTrendAnalyzer');
 const { mergeHistoryConfig, resolveArtifactPaths } = require('../../utils/ArtifactPaths');
 const { atomicWriteJson } = require('../../utils/JsonFile');
+const { fileChecksum } = require('../../utils/HistoryValidation');
 
 const roots = new Set();
 const FIXED_NOW = '2026-08-03T00:00:00.000Z';
@@ -49,6 +50,26 @@ function makeLegacy(manager, persisted, options = {}) {
     if (options.aggregateOnly) fs.rmSync(path.join(persisted.directory, 'execution.json'), { force: true });
 }
 
+function downgradeFailureIndexToV1(persisted) {
+    const indexFile = path.join(persisted.directory, 'failure-index.json');
+    const summaryFile = path.join(persisted.directory, 'summary.json');
+    const current = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
+    const legacy = {
+        ...current,
+        failureIndexSchemaVersion: '1.0.0',
+        testOutcomes: current.testOutcomes.map(({ attempts, ...outcome }) => outcome)
+    };
+    atomicWriteJson(indexFile, legacy);
+    const summary = JSON.parse(fs.readFileSync(summaryFile, 'utf8'));
+    summary.failureIndex = {
+        ...summary.failureIndex,
+        schemaVersion: '1.0.0',
+        size: fs.statSync(indexFile).size,
+        checksum: `sha256:${fileChecksum(indexFile)}`
+    };
+    atomicWriteJson(summaryFile, summary);
+}
+
 test.afterEach(() => {
     for (const root of roots) fs.rmSync(root, { recursive: true, force: true });
     roots.clear();
@@ -75,6 +96,9 @@ test('legacy execution is lazily normalized with degraded identity and fixed war
     expect(result.runs[0].detailStatus).toBe('legacy-normalized');
     expect(result.runs[0].testOutcomes[0].identityQuality).toBe('degraded');
     expect(result.runs[0].testOutcomes[0].failure.signatureQuality).toBe('degraded');
+    expect(result.runs[0].testOutcomes[0].flakyClassification).toEqual({
+        flakyEligibility: 'unknown', flaky: null, reasonCode: 'ATTEMPT_HISTORY_NOT_PERSISTED'
+    });
     expect(result.warnings.map(item => item.code)).toEqual(expect.arrayContaining([
         'HEYNA_FAILURE_HISTORY_MISSING_INDEX',
         'HEYNA_FAILURE_HISTORY_LEGACY_EXECUTION_NORMALIZED',
@@ -167,8 +191,8 @@ test('aggregate-only legacy history is unknown rather than zero failures', async
     expect(result.warnings.map(item => item.code)).toContain('HEYNA_FAILURE_HISTORY_AGGREGATE_ONLY_RUN');
 });
 
-test('checksum mismatch and unsupported descriptor are sanitized malformed-index diagnostics', async () => {
-    for (const kind of ['checksum', 'unsupported']) {
+test('checksum, schema mismatch, and unsupported descriptor are sanitized malformed-index diagnostics', async () => {
+    for (const kind of ['checksum', 'mismatch', 'unsupported']) {
         const root = tempRoot();
         const manager = managerFor(root);
         const persisted = await manager.persistRun({ execution: outcomes('FAILED'), metadata: metadata() });
@@ -176,7 +200,7 @@ test('checksum mismatch and unsupported descriptor are sanitized malformed-index
         else {
             const file = path.join(persisted.directory, 'summary.json');
             const summary = JSON.parse(fs.readFileSync(file, 'utf8'));
-            summary.failureIndex.schemaVersion = '2.0.0';
+            summary.failureIndex.schemaVersion = kind === 'unsupported' ? '3.0.0' : '1.0.0';
             atomicWriteJson(file, summary);
         }
         const result = await readerFor(manager).read();
@@ -262,14 +286,63 @@ test('migrated history is included by default and can be excluded explicitly', a
     const manager = managerFor(tempRoot());
     const fingerprint = `sha256:${'a'.repeat(64)}`;
     await manager.persistRun({
-        execution: outcomes('FAILED'),
+        execution: outcomes('FAILED', {
+            retryCount: 1,
+            attempts: [{ retry: 0, status: 'FAILED' }, { retry: 1, status: 'FAILED' }]
+        }),
         metadata: metadata(),
         migration: { identity: fingerprint, source: 'legacy.json', sourceChecksum: fingerprint }
     });
-    expect((await readerFor(manager).read()).runs).toHaveLength(1);
+    const included = await readerFor(manager).read();
+    expect(included.runs).toHaveLength(1);
+    expect((await manager.getRun(included.runs[0].runId)).failureIndex.testOutcomes[0].attempts).toBeNull();
+    expect(included.runs[0].testOutcomes[0].flakyClassification).toEqual({
+        flakyEligibility: 'unknown', flaky: null, reasonCode: 'ATTEMPT_HISTORY_NOT_PERSISTED'
+    });
     const excluded = await readerFor(manager).read({ includeMigrated: false });
     expect(excluded.runs).toEqual([]);
     expect(excluded.source).toMatchObject({ matchedRunCount: 0, selectedRunCount: 0 });
+});
+
+test('v1, v2, and mixed histories expose additive known-or-unknown flaky classifications', async () => {
+    const manager = managerFor(tempRoot(), { artifacts: { execution: false } });
+    const v1NoRetry = await manager.persistRun({
+        execution: outcomes('PASSED', { retryCount: 0 }),
+        metadata: metadata('2026-07-01T00:00:00Z')
+    });
+    downgradeFailureIndexToV1(v1NoRetry);
+    const v1Retried = await manager.persistRun({
+        execution: outcomes('PASSED', { retryCount: 3 }),
+        metadata: metadata('2026-07-02T00:00:00Z')
+    });
+    downgradeFailureIndexToV1(v1Retried);
+    await manager.persistRun({
+        execution: outcomes('PASSED', {
+            retryCount: 1,
+            attempts: [
+                { retry: 0, status: 'FAILED', stack: 'private stack', url: 'https://secret.example' },
+                { retry: 1, status: 'PASSED', duration: 10 }
+            ]
+        }),
+        metadata: metadata('2026-07-03T00:00:00Z')
+    });
+    await manager.persistRun({
+        execution: outcomes('PASSED', { retryCount: 2 }),
+        metadata: metadata('2026-07-04T00:00:00Z')
+    });
+
+    const result = await readerFor(manager).read();
+    expect(result.failureHistorySchemaVersion).toBe('1.1.0');
+    expect(result.runs.map(run => run.testOutcomes[0].flakyClassification)).toEqual([
+        { flakyEligibility: 'unknown', flaky: null, reasonCode: 'ATTEMPT_HISTORY_NOT_PERSISTED' },
+        { flakyEligibility: 'unknown', flaky: null, reasonCode: 'ATTEMPT_HISTORY_NOT_PERSISTED' },
+        { flakyEligibility: 'known', flaky: true, reasonCode: null },
+        { flakyEligibility: 'unknown', flaky: null, reasonCode: 'ATTEMPT_HISTORY_NOT_PERSISTED' }
+    ]);
+    expect(result.runs.every(run => !Object.prototype.hasOwnProperty.call(run.testOutcomes[0], 'attempts'))).toBe(true);
+    expect(Object.isFrozen(result.runs[2].testOutcomes[0].flakyClassification)).toBe(true);
+    expect(JSON.stringify(result)).not.toContain('private stack');
+    expect(JSON.stringify(result)).not.toContain('secret.example');
 });
 
 test('zero-test run stays in timeline diagnostics and not outcome counts', async () => {

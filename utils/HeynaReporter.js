@@ -4,6 +4,7 @@ const { classifyFailure, FAILURE_CATEGORIES } = require('./FailureClassifier');
 const { createFailureIdentity, createTestIdentity, fingerprint, normalizeProject } = require('./FailureIdentity');
 const { DEFAULT_HISTORY_CONFIG, mergeHistoryConfig, resolveArtifactPaths } = require('./ArtifactPaths');
 const { ensureDir, readJson, atomicWriteJson } = require('./JsonFile');
+const { requireSafeRetry } = require('./FlakyAttemptHistory');
 
 const DEGRADED_TEST_DISPLAY = 'Unidentified test';
 const executionTraceLocators = new WeakMap();
@@ -318,6 +319,10 @@ function hasDefined(value, key) {
     return hasOwn(value, key) && value[key] !== undefined && value[key] !== null;
 }
 
+function reporterRetry(value, supplied) {
+    return requireSafeRetry(supplied ? value : 0, 'retry');
+}
+
 class ApiLogger {
     constructor(page, testCase, options = {}) {
         const config = HeynaReporter.getConfig();
@@ -435,9 +440,13 @@ class HeynaReporter {
         if (!fs.existsSync(paths.metadataFile)) this.updateMetadata({});
 
         mutateExecution(data => {
-            const retry = Number(metadata.retry || 0);
-            const repeatEachIndex = Number(metadata.repeatEachIndex || 0);
             const testInfo = metadata.testInfo;
+            const retrySupplied = hasDefined(metadata, 'retry') || hasDefined(testInfo, 'retry');
+            const retry = reporterRetry(
+                hasDefined(metadata, 'retry') ? metadata.retry : (testInfo && testInfo.retry),
+                retrySupplied
+            );
+            const repeatEachIndex = Number(metadata.repeatEachIndex || 0);
             const testIdentity = createTestIdentity({
                 projectRoot: this.config.projectRoot,
                 testInfo,
@@ -463,13 +472,32 @@ class HeynaReporter {
             };
 
             if (existing) {
+                const hasAttempts = hasOwn(existing, 'attempts');
+                if (hasAttempts && (!Array.isArray(existing.attempts) || !existing.attempts.length)) {
+                    throw executionContextConflict();
+                }
+                if (hasAttempts) {
+                    const previousAttempt = existing.attempts[existing.attempts.length - 1];
+                    if (!previousAttempt) throw executionContextConflict();
+                    const previousRetry = requireSafeRetry(previousAttempt.retry, 'previous attempt retry');
+                    const recordedRetry = requireSafeRetry(existing.retryCount, 'recorded retry');
+                    if (previousRetry !== existing.attempts.length - 1 || recordedRetry !== previousRetry || retry <= previousRetry) {
+                        throw executionContextConflict();
+                    }
+                    if (retry === previousRetry + 1 && normalizeStatus(previousAttempt.status) !== 'RUNNING') {
+                        existing.attempts.push(attempt);
+                    } else {
+                        delete existing.attempts;
+                    }
+                } else if (hasOwn(existing, 'retryCount')) {
+                    const previousRetry = requireSafeRetry(existing.retryCount, 'recorded retry');
+                    if (retry <= previousRetry) throw executionContextConflict();
+                }
                 existing.testCase = context.displayTestCase;
                 existing.status = 'RUNNING';
                 existing.duration = 0;
                 existing.feature = metadata.feature || existing.feature || process.env.HEYNA_FEATURE || 'Login & Authentication';
                 existing.steps = [];
-                existing.attempts = Array.isArray(existing.attempts) ? existing.attempts : [];
-                existing.attempts.push(attempt);
                 existing.currentAttempt = attempt.attemptNumber;
                 existing.retryCount = retry;
                 existing.repeatEachIndex = repeatEachIndex;
@@ -483,7 +511,7 @@ class HeynaReporter {
                 delete existing.failureIdentity;
                 delete existing.failureCategory;
             } else {
-                data.push({
+                const created = {
                     testCase: context.displayTestCase,
                     executionKey,
                     testIdentity,
@@ -493,12 +521,13 @@ class HeynaReporter {
                     traceAvailable: false,
                     feature: metadata.feature || process.env.HEYNA_FEATURE || 'Login & Authentication',
                     steps: [],
-                    attempts: [attempt],
                     currentAttempt: attempt.attemptNumber,
                     retryCount: retry,
                     repeatEachIndex,
                     executionDate: new Date().toISOString()
-                });
+                };
+                if (retry === 0) created.attempts = [attempt];
+                data.push(created);
             }
         });
     }
@@ -766,7 +795,10 @@ class HeynaReporter {
             ? classifyFailure(cleanedError).category
             : FAILURE_CATEGORIES.UNKNOWN_FAILURE;
         const testInfo = extra.testInfo;
-        const retry = Number(testInfo && testInfo.retry || extra.retry || 0);
+        const retrySupplied = hasDefined(testInfo, 'retry') || hasDefined(extra, 'retry');
+        const suppliedRetry = retrySupplied
+            ? reporterRetry(hasDefined(testInfo, 'retry') ? testInfo.retry : extra.retry, true)
+            : null;
         const established = this.executionContexts.get(testCase);
         const repeatSupplied = hasDefined(testInfo, 'repeatEachIndex') || hasDefined(extra, 'repeatEachIndex');
         const repeatEachIndex = repeatSupplied
@@ -822,6 +854,33 @@ class HeynaReporter {
             tc.testIdentity = testIdentity;
             tc.project = testIdentity.project;
             tc.repeatEachIndex = repeatEachIndex;
+            const hasAttempts = hasOwn(tc, 'attempts');
+            const attempts = tc.attempts;
+            let retry = suppliedRetry === null ? 0 : suppliedRetry;
+            if (hasAttempts && (!Array.isArray(attempts) || !attempts.length)) {
+                throw executionContextConflict();
+            }
+            if (hasAttempts) {
+                const attempt = attempts[attempts.length - 1];
+                const recordedRetry = requireSafeRetry(attempt.retry, 'recorded attempt retry');
+                if (recordedRetry !== attempts.length - 1
+                    || (suppliedRetry !== null && suppliedRetry !== recordedRetry)
+                    || normalizeStatus(attempt.status) !== 'RUNNING') {
+                    throw executionContextConflict();
+                }
+                retry = recordedRetry;
+            } else if (hasOwn(tc, 'retryCount')) {
+                const recordedRetry = requireSafeRetry(tc.retryCount, 'recorded retry');
+                if (normalizeStatus(tc.status) === 'RUNNING'
+                    && suppliedRetry !== null && suppliedRetry !== recordedRetry) {
+                    throw executionContextConflict();
+                }
+                if (normalizeStatus(tc.status) !== 'RUNNING'
+                    && suppliedRetry !== null && suppliedRetry < recordedRetry) {
+                    throw executionContextConflict();
+                }
+                retry = suppliedRetry === null ? recordedRetry : suppliedRetry;
+            }
             tc.retryCount = retry;
             tc.status = normalizeStatus(status);
             tc.duration = duration || 0;
@@ -840,8 +899,8 @@ class HeynaReporter {
                 delete tc.failureIdentity;
             }
 
-            if (Array.isArray(tc.attempts) && tc.attempts.length) {
-                const attempt = tc.attempts[tc.attempts.length - 1];
+            if (Array.isArray(attempts) && attempts.length) {
+                const attempt = attempts[attempts.length - 1];
                 attempt.status = tc.status;
                 attempt.duration = duration || 0;
                 attempt.finishedAt = new Date().toISOString();

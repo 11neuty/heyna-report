@@ -290,7 +290,8 @@ class HistoryManager {
                 timestamp: summary.timestamp,
                 execution,
                 metadata,
-                projectRoot: this.paths.projectRoot
+                projectRoot: this.paths.projectRoot,
+                forceAttemptHistoryUnavailable: input.migration !== undefined
             });
             const failureIndexFile = path.join(temporaryDir, 'failure-index.json');
             this.writeJson(failureIndexFile, failureIndex);

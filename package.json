@@ -14,6 +14,7 @@
     "test:trends": "playwright test tests/framework/pass-rate-trend-analyzer.spec.js --workers=1",
     "test:duration-trends": "playwright test tests/framework/duration-trend-analyzer.spec.js --workers=1",
     "test:failure-trends": "playwright test tests/framework/failure-identity.spec.js tests/framework/historical-failure-reader.spec.js tests/framework/failure-trend-analyzer.spec.js --workers=1",
+    "test:flaky-history": "playwright test tests/framework/flaky-attempt-history.spec.js tests/framework/history-manager.spec.js tests/framework/historical-failure-reader.spec.js tests/framework/failure-trend-analyzer.spec.js --workers=1",
     "test:clean": "npm run clean && playwright test",
     "test:headed": "playwright test --headed",
     "test:ui": "playwright test --ui",

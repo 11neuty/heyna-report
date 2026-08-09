@@ -240,6 +240,31 @@ test('retries collapse while repeatEach outcomes remain distinct', async () => {
     expect((await analyzerFor(history([repeatedRun])).analyzer.analyze()).recurringFailures).toEqual([]);
 });
 
+test('reader schemas 1.0.0 and 1.1.0 produce structurally identical recurrence results', async () => {
+    const base = history([
+        run(1, [outcome('TC', 'FAILED', { retryCount: 1 })]),
+        run(2, [outcome('TC', 'PASSED', { retryCount: 2 })]),
+        run(3, [outcome('TC', 'FAILED', { retryCount: 0 })])
+    ]);
+    const additive = cloneJsonValue(base);
+    additive.failureHistorySchemaVersion = '1.1.0';
+    additive.runs.forEach(item => item.testOutcomes.forEach(value => {
+        value.flakyClassification = value.retryCount > 0
+            ? { flakyEligibility: 'known', flaky: value.status === 'PASSED', reasonCode: null }
+            : { flakyEligibility: 'unknown', flaky: null, reasonCode: 'ATTEMPT_HISTORY_NOT_PERSISTED' };
+    }));
+    const first = await analyzerFor(base).analyzer.analyze({ minimumOccurrences: 1, minimumAffectedRuns: 1 });
+    const second = await analyzerFor(additive).analyzer.analyze({ minimumOccurrences: 1, minimumAffectedRuns: 1 });
+    expect(second).toEqual(first);
+
+    additive.runs[0].testOutcomes[0].flakyClassification = {
+        flakyEligibility: 'unknown', flaky: false, reasonCode: 'ATTEMPT_HISTORY_NOT_PERSISTED'
+    };
+    await expect(analyzerFor(additive).analyzer.analyze()).rejects.toMatchObject({
+        code: 'HEYNA_FAILURE_TREND_SOURCE_CONTRACT'
+    });
+});
+
 test('known opportunities produce exact two-decimal rates without negative zero', async () => {
     const result = await analyzerFor(history([
         run(1, [outcome('TC', 'FAILED')]),
@@ -620,7 +645,7 @@ test('adversarial high-cardinality repeats are canonicalized by index constructi
             unsuccessfulTests: index.testOutcomes.length,
             migrated: false,
             detailStatus: 'indexed',
-            testOutcomes: index.testOutcomes
+            testOutcomes: index.testOutcomes.map(({ attempts, ...item }) => item)
         };
     });
     const sources = [

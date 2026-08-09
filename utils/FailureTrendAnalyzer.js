@@ -2,6 +2,7 @@ const { createRecurrenceKey } = require('./FailureIdentity');
 const { validateFailureIndex } = require('./HistoricalFailureValidation');
 const {
     FAILURE_HISTORY_SCHEMA_VERSION,
+    SUPPORTED_FAILURE_HISTORY_SCHEMA_VERSIONS,
     FAILURE_TREND_SCHEMA_VERSION,
     canonicalizeWarning,
     cloneJsonValue,
@@ -16,6 +17,7 @@ const {
     sourceContractError,
     warning
 } = require('./FailureTrendValidation');
+const { ATTEMPT_HISTORY_NOT_PERSISTED } = require('./FlakyAttemptHistory');
 
 const SOURCE_FIELDS = Object.freeze([
     'discoveredRunCount', 'validRunCount', 'excludedRunCount', 'matchedRunCount', 'selectedRunCount',
@@ -23,10 +25,49 @@ const SOURCE_FIELDS = Object.freeze([
     'malformedFailureIndexRunCount', 'zeroTestRunCount', 'testOutcomeCount', 'failureObservationCount'
 ]);
 
+const RECURRENCE_OUTCOME_FIELDS = Object.freeze([
+    'testKey', 'playwrightTestIdFingerprint', 'project', 'file', 'suitePath', 'title', 'line',
+    'repeatEachIndex', 'retryCount', 'status', 'traceAvailable', 'identityQuality', 'failure'
+]);
+
+function validateFlakyClassification(value, context) {
+    if (!isPlainObject(value)) throw sourceContractError(`${context} must be a plain object.`);
+    const keys = Reflect.ownKeys(value).sort(compareCodePoints);
+    const expected = ['flaky', 'flakyEligibility', 'reasonCode'];
+    if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) {
+        throw sourceContractError(`${context} contains unsupported fields.`);
+    }
+    if (value.flakyEligibility === 'known') {
+        if (typeof value.flaky !== 'boolean' || value.reasonCode !== null) {
+            throw sourceContractError(`${context} known classification is inconsistent.`);
+        }
+    } else if (value.flakyEligibility === 'unknown') {
+        if (value.flaky !== null || value.reasonCode !== ATTEMPT_HISTORY_NOT_PERSISTED) {
+            throw sourceContractError(`${context} unknown classification is inconsistent.`);
+        }
+    } else {
+        throw sourceContractError(`${context}.flakyEligibility is unsupported.`);
+    }
+}
+
+function projectRecurrenceOutcome(outcome, schemaVersion, context) {
+    if (!isPlainObject(outcome)) throw sourceContractError(`${context} must be a plain object.`);
+    const expected = schemaVersion === '1.1.0'
+        ? [...RECURRENCE_OUTCOME_FIELDS, 'flakyClassification']
+        : [...RECURRENCE_OUTCOME_FIELDS];
+    const keys = Reflect.ownKeys(outcome).sort(compareCodePoints);
+    const sortedExpected = expected.sort(compareCodePoints);
+    if (keys.length !== sortedExpected.length || keys.some((key, index) => key !== sortedExpected[index])) {
+        throw sourceContractError(`${context} contains unsupported fields.`);
+    }
+    if (schemaVersion === '1.1.0') validateFlakyClassification(outcome.flakyClassification, `${context}.flakyClassification`);
+    return Object.fromEntries(RECURRENCE_OUTCOME_FIELDS.map(field => [field, outcome[field]]));
+}
+
 function validateReaderResult(value) {
     const result = cloneJsonValue(value, 'HistoricalFailureReader result');
-    if (!isPlainObject(result) || result.failureHistorySchemaVersion !== FAILURE_HISTORY_SCHEMA_VERSION) {
-        throw sourceContractError(`failureHistorySchemaVersion must be ${FAILURE_HISTORY_SCHEMA_VERSION}.`);
+    if (!isPlainObject(result) || !SUPPORTED_FAILURE_HISTORY_SCHEMA_VERSIONS.includes(result.failureHistorySchemaVersion)) {
+        throw sourceContractError(`failureHistorySchemaVersion must be a supported version through ${FAILURE_HISTORY_SCHEMA_VERSION}.`);
     }
     parseDate(result.generatedAt, 'generatedAt', sourceContractError);
     if (!isPlainObject(result.query) || !isPlainObject(result.source)) throw sourceContractError('reader result must provide plain query and source objects.');
@@ -79,18 +120,24 @@ function validateReaderResult(value) {
             throw sourceContractError(`runs[${index}].detailStatus is unsupported.`);
         }
         if (run.detailStatus === 'indexed' || run.detailStatus === 'legacy-normalized') {
-            const failureCount = run.testOutcomes.filter(item => item && item.failure !== null).length;
+            const recurrenceOutcomes = run.testOutcomes.map((outcome, outcomeIndex) => projectRecurrenceOutcome(
+                outcome,
+                result.failureHistorySchemaVersion,
+                `runs[${index}].testOutcomes[${outcomeIndex}]`
+            ));
+            const failureCount = recurrenceOutcomes.filter(item => item && item.failure !== null).length;
             try {
                 validateFailureIndex({
                     failureIndexSchemaVersion: '1.0.0',
                     runId: run.runId,
                     timestamp: run.timestamp,
-                    counts: { indexedTests: run.testOutcomes.length, indexedFailures: failureCount },
-                    testOutcomes: run.testOutcomes
+                    counts: { indexedTests: recurrenceOutcomes.length, indexedFailures: failureCount },
+                    testOutcomes: recurrenceOutcomes
                 }, { expectedRunId: run.runId, expectedTimestamp: run.timestamp });
             } catch (error) {
                 throw sourceContractError(`runs[${index}] contains invalid finalized outcomes.`);
             }
+            run.testOutcomes = recurrenceOutcomes;
             if (run.testOutcomes.length !== run.totalTests) throw sourceContractError(`runs[${index}] detail count contradicts totalTests.`);
             testOutcomeCount = safeAdd(testOutcomeCount, run.testOutcomes.length, 'reader test outcomes');
             failureObservationCount = safeAdd(failureObservationCount, failureCount, 'reader failure observations');

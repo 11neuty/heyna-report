@@ -31,9 +31,9 @@ const result = await analyzer.analyze({
 
 ## Immutable failure index
 
-Every newly published enabled-history run contains `failure-index.json`, even when `history.artifacts.execution` is false. It is independently versioned as `1.0.0`, built and validated inside the run staging directory, and published by the existing atomic rename under the shared history lock. It remains inside the immutable owning run and is deleted only when retention deletes that run. There is no mutable global failure database.
+Every newly published enabled-history run contains `failure-index.json`, even when `history.artifacts.execution` is false. New writers use independently versioned schema `2.0.0`; schema `1.0.0` remains readable. The sidecar is built and validated inside the run staging directory and published by the existing atomic rename under the shared history lock. It remains inside the immutable owning run and is deleted only when retention deletes that run. There is no mutable global failure database.
 
-The sidecar records all finalized outcomes, not just failures. Successful outcomes establish known eligible absences. Each outcome contains bounded identity/display metadata, repeat and retry information, final status, trace availability, and either `null` or a privacy-reduced failure identity. The canonical finalized tuple inside one run is `project + testKey + repeatEachIndex`; duplicate tuples are rejected during construction and independent validation before publication. The optional `summary.json.failureIndex` descriptor contains the sidecar's schema, fixed relative path, size, SHA-256 checksum, and test/failure counts. It does not change history schema or format version and is intentionally not a manifest artifact type.
+The sidecar records all finalized outcomes, not just failures. Successful outcomes establish known eligible absences. Each v2 outcome also contains either an exact ordered `{ retry, status }` attempt sequence or `attempts: null`; no duration, errors, stacks, traces, evidence, URLs, paths, payloads, or arbitrary attempt metadata is copied. The canonical finalized tuple inside one run is `project + testKey + repeatEachIndex`; duplicate tuples are rejected during construction and independent validation before publication. The optional `summary.json.failureIndex` descriptor contains the sidecar's schema, fixed relative path, size, SHA-256 checksum, and test/failure counts. It does not change history schema or format version and is intentionally not a manifest artifact type.
 
 ## Identity and privacy
 
@@ -45,7 +45,7 @@ Project-relative file names and suite/test titles may themselves be sensitive us
 
 ## Reader behavior and legacy history
 
-`HistoricalFailureReader` calls `HistoryManager.listRunsWithDiagnostics()` once, performs summary-level filtering, and reads selected runs through `HistoryManager.getRun()`. Retention-bounded metadata comes from the additive public listing descriptor; the reader does not inspect `HistoryManager` configuration. A valid declared index is preferred. A legacy run without a descriptor may be normalized in memory from immutable `execution.json`; it is never rewritten, uses opaque fallback identity, and is explicitly marked degraded with fixed warnings. Semantically equivalent legacy retry duplicates may be collapsed deterministically; conflicting duplicate statuses or signatures make that run aggregate-only.
+`HistoricalFailureReader` schema `1.1.0` calls `HistoryManager.listRunsWithDiagnostics()` once, performs summary-level filtering, and reads selected runs through `HistoryManager.getRun()`. It adds a tri-state `flakyClassification` to outcomes but does not expose attempt arrays. Complete v2 attempts are flaky only when the final status is `PASSED` after an earlier `FAILED` or `TIMEDOUT`; v1, `attempts: null`, and legacy normalization remain unknown. Retry count and cross-run transitions never prove flakiness. Retention-bounded metadata comes from the additive public listing descriptor; the reader does not inspect `HistoryManager` configuration. A valid declared index is preferred. A legacy run without a descriptor may be normalized in memory from immutable `execution.json`; it is never rewritten, uses opaque fallback identity, and is explicitly marked degraded with fixed warnings. Semantically equivalent legacy retry duplicates may be collapsed deterministically; conflicting duplicate statuses or signatures make that run aggregate-only.
 
 A run with no usable detailed artifact remains in source counters and timelines as aggregate-only. Its unsuccessful aggregate is not converted to zero failures, and it is excluded from per-test denominators. Missing, malformed, unsupported, unreadable, and checksum-invalid indexes produce warnings from one fixed code/message/severity/detail catalog. The analyzer reconstructs catalog messages and rejects unknown codes, severity mismatches, and unexpected details, so dependency-supplied native filesystem text, URLs, stacks, paths, or raw values cannot cross its public boundary. Invalid sidecars do not make a valid summary disappear from historical metrics or pass-rate trends.
 
@@ -58,6 +58,8 @@ Schema `1.0.0` always groups recurrence by:
 ```text
 project + testKey + failureSignature
 ```
+
+`FailureTrendAnalyzer` accepts reader schemas `1.0.0` and `1.1.0`, strictly projects these original recurrence fields, and ignores flaky classification. Its trend schema and recurrence results remain unchanged. See [Durable Flaky Attempt History](flaky-attempt-history.md) for the separate prerequisite contract.
 
 One occurrence is one validated `FAILED` or `TIMEDOUT` `(runId, project, testKey, repeatEachIndex, failureSignature)` outcome. Retries do not add occurrences; separate `repeatEach` outcomes do. Opportunity status is explicit:
 

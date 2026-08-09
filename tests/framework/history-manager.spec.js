@@ -3,6 +3,7 @@ const os = require('os');
 const path = require('path');
 const { test, expect } = require('@playwright/test');
 const HistoryManager = require('../../utils/HistoryManager');
+const HistoricalFailureReader = require('../../utils/HistoricalFailureReader');
 const HistoricalMetricsAggregator = require('../../utils/HistoricalMetricsAggregator');
 const PassRateTrendAnalyzer = require('../../utils/PassRateTrendAnalyzer');
 const Heyna = require('../../utils/HeynaReporter');
@@ -43,6 +44,22 @@ function metadata(timestamp = '2026-07-01T10:00:00.000Z') {
         executedBy: 'Framework Test',
         executionStartTime: timestamp,
         executionEndTime: new Date(new Date(timestamp).getTime() + 100).toISOString()
+    };
+}
+
+async function persistReporterExecution(history) {
+    const start = Heyna.getMetadata().executionStartTime;
+    Heyna.updateMetadata({
+        executionEndTime: new Date(Date.parse(start) + 1000).toISOString(),
+        runStatus: 'COMPLETED'
+    });
+    const manager = new HistoryManager({ paths: Heyna.getPaths(), history, logger: { log() {}, error() {} } });
+    await manager.initialize();
+    const persisted = await manager.persistRun({ execution: Heyna.getExecutionData(), metadata: Heyna.getMetadata() });
+    return {
+        manager,
+        persisted,
+        index: JSON.parse(fs.readFileSync(path.join(persisted.directory, 'failure-index.json'), 'utf8'))
     };
 }
 
@@ -558,10 +575,11 @@ test('failure index is an independently checksummed core sidecar and survives di
     const summary = JSON.parse(fs.readFileSync(path.join(result.directory, 'summary.json'), 'utf8'));
     const manifest = JSON.parse(fs.readFileSync(path.join(result.directory, 'manifest.json'), 'utf8'));
     expect(fs.existsSync(path.join(result.directory, 'execution.json'))).toBe(false);
-    expect(index).toMatchObject({ failureIndexSchemaVersion: '1.0.0', counts: { indexedTests: 1, indexedFailures: 1 } });
+    expect(index).toMatchObject({ failureIndexSchemaVersion: '2.0.0', counts: { indexedTests: 1, indexedFailures: 1 } });
+    expect(index.testOutcomes[0].attempts).toBeNull();
     expect(summary.schemaVersion).toBe('1.0.0');
     expect(summary.failureIndex).toMatchObject({
-        schemaVersion: '1.0.0', path: 'failure-index.json',
+        schemaVersion: '2.0.0', path: 'failure-index.json',
         size: fs.statSync(indexFile).size, indexedTestCount: 1, indexedFailureCount: 1
     });
     expect(summary.failureIndex.checksum).toMatch(/^sha256:[a-f0-9]{64}$/);
@@ -703,4 +721,173 @@ test('reporter separates project, repeatEach, and colliding labels while collaps
     expect(retried.attempts).toHaveLength(2);
     expect(new Set(data.map(item => item.executionKey)).size).toBe(4);
     expect(data.every(item => item.testIdentity && item.executionKey)).toBe(true);
+});
+
+test('reporter retry history persists privately in v2 and classifies without raw execution retention', async () => {
+    const root = temporaryRoot();
+    const history = historyConfig({
+        artifacts: { execution: false, metadata: false, pdf: false, dashboard: false, evidence: false, traces: false }
+    });
+    Heyna.configure({ projectRoot: process.cwd(), artifactRoot: root, history });
+    Heyna.initializeRun({ reset: true, project: 'Retry Project' });
+
+    Heyna.initializeTest('TC_Flaky', { project: 'Retry Project', retry: 0, repeatEachIndex: 0 });
+    Heyna.completeTest('TC_Flaky', 'FAILED', 5, 'private failure at C:\\Users\\private\\test.spec.js', {
+        project: 'Retry Project', retry: 0, repeatEachIndex: 0,
+        failureScreenshot: 'C:\\private\\failure.png'
+    });
+    Heyna.initializeTest('TC_Flaky', { project: 'Retry Project', retry: 1, repeatEachIndex: 0 });
+    Heyna.completeTest('TC_Flaky', 'PASSED', 3, undefined, {
+        project: 'Retry Project', retry: 1, repeatEachIndex: 0
+    });
+
+    const execution = Heyna.getExecutionData();
+    const before = JSON.stringify(execution);
+    const start = Heyna.getMetadata().executionStartTime;
+    Heyna.updateMetadata({ executionEndTime: new Date(Date.parse(start) + 1000).toISOString(), runStatus: 'COMPLETED' });
+    const manager = new HistoryManager({ paths: Heyna.getPaths(), history, logger: { log() {}, error() {} } });
+    await manager.initialize();
+    const persisted = await manager.persistRun({ execution, metadata: Heyna.getMetadata() });
+
+    expect(fs.existsSync(path.join(persisted.directory, 'execution.json'))).toBe(false);
+    const indexFile = path.join(persisted.directory, 'failure-index.json');
+    const index = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
+    expect(index.failureIndexSchemaVersion).toBe('2.0.0');
+    expect(index.testOutcomes[0].attempts).toEqual([
+        { retry: 0, status: 'FAILED' },
+        { retry: 1, status: 'PASSED' }
+    ]);
+    expect(index.testOutcomes[0].attempts.every(item => Reflect.ownKeys(item).sort().join(',') === 'retry,status')).toBe(true);
+    expect(JSON.stringify(index.testOutcomes[0].attempts)).not.toContain('private');
+    expect(persisted.summary).toMatchObject({
+        schemaVersion: '1.0.0',
+        failureIndex: { schemaVersion: '2.0.0', size: fs.statSync(indexFile).size }
+    });
+    expect(JSON.stringify(execution)).toBe(before);
+
+    const reader = new HistoricalFailureReader({ historyManager: manager, clock: () => new Date('2026-08-08T00:00:00Z') });
+    const firstRead = await reader.read();
+    const secondRead = await reader.read();
+    expect(firstRead.failureHistorySchemaVersion).toBe('1.1.0');
+    expect(firstRead.runs[0].testOutcomes[0]).not.toHaveProperty('attempts');
+    expect(firstRead.runs[0].testOutcomes[0].flakyClassification).toEqual({
+        flakyEligibility: 'known', flaky: true, reasonCode: null
+    });
+    expect(Object.isFrozen(firstRead.runs[0].testOutcomes[0].flakyClassification)).toBe(true);
+    expect(firstRead).not.toBe(secondRead);
+    expect(() => JSON.stringify(firstRead)).not.toThrow();
+});
+
+test('reporter persists a complete observed retry 0 through 2 sequence', async () => {
+    const root = temporaryRoot();
+    const history = historyConfig({
+        artifacts: { execution: false, metadata: false, pdf: false, dashboard: false, evidence: false, traces: false }
+    });
+    Heyna.configure({ projectRoot: process.cwd(), artifactRoot: root, history });
+    Heyna.initializeRun({ reset: true, project: 'Complete Retry Project' });
+    for (const [retry, status] of ['FAILED', 'TIMEDOUT', 'PASSED'].entries()) {
+        Heyna.initializeTest('TC_Complete_Retries', { project: 'Complete Retry Project', retry });
+        Heyna.completeTest('TC_Complete_Retries', status, 1, status === 'PASSED' ? undefined : 'expected failure', {
+            project: 'Complete Retry Project', retry
+        });
+    }
+    const { index } = await persistReporterExecution(history);
+    expect(index.testOutcomes[0].attempts).toEqual([
+        { retry: 0, status: 'FAILED' },
+        { retry: 1, status: 'TIMEDOUT' },
+        { retry: 2, status: 'PASSED' }
+    ]);
+});
+
+test('first observed initializeTest retries persist unavailable history without aborting', async () => {
+    for (const retry of [1, 2]) {
+        const root = temporaryRoot();
+        const history = historyConfig({ artifacts: { execution: false, metadata: false } });
+        Heyna.configure({ projectRoot: process.cwd(), artifactRoot: root, history });
+        Heyna.initializeRun({ reset: true, project: `First Retry ${retry}` });
+        expect(() => Heyna.initializeTest('TC_First_Observed', { project: `First Retry ${retry}`, retry })).not.toThrow();
+        Heyna.completeTest('TC_First_Observed', 'PASSED', 1, undefined, { project: `First Retry ${retry}`, retry });
+        const execution = Heyna.getExecutionData()[0];
+        expect(execution).toMatchObject({ status: 'PASSED', retryCount: retry });
+        expect(execution).not.toHaveProperty('attempts');
+        const { index } = await persistReporterExecution(history);
+        expect(index.testOutcomes[0].attempts).toBeNull();
+    }
+});
+
+test('a later retry after a RUNNING attempt degrades history and preserves the final outcome', async () => {
+    const root = temporaryRoot();
+    const history = historyConfig({ artifacts: { execution: false, metadata: false } });
+    Heyna.configure({ projectRoot: process.cwd(), artifactRoot: root, history });
+    Heyna.initializeRun({ reset: true, project: 'Recovery Project' });
+    Heyna.initializeTest('TC_Recovery', { project: 'Recovery Project', retry: 0 });
+    expect(() => Heyna.initializeTest('TC_Recovery', { project: 'Recovery Project', retry: 1 })).not.toThrow();
+    const running = Heyna.getExecutionData()[0];
+    expect(running).toMatchObject({ status: 'RUNNING', retryCount: 1 });
+    expect(running).not.toHaveProperty('attempts');
+    Heyna.completeTest('TC_Recovery', 'PASSED', 1, undefined, { project: 'Recovery Project', retry: 1 });
+
+    const { manager, index } = await persistReporterExecution(history);
+    expect(index.testOutcomes[0]).toMatchObject({ status: 'PASSED', retryCount: 1, attempts: null });
+    const read = await new HistoricalFailureReader({
+        historyManager: manager,
+        clock: () => new Date('2026-08-08T00:00:00Z')
+    }).read();
+    expect(read.runs[0].testOutcomes[0].flakyClassification).toEqual({
+        flakyEligibility: 'unknown', flaky: null, reasonCode: 'ATTEMPT_HISTORY_NOT_PERSISTED'
+    });
+});
+
+test('completeTest first observed on a non-zero retry remains backward compatible', async () => {
+    for (const retry of [1, 2]) {
+        const root = temporaryRoot();
+        const history = historyConfig({ artifacts: { execution: false, metadata: false } });
+        Heyna.configure({ projectRoot: process.cwd(), artifactRoot: root, history });
+        Heyna.initializeRun({ reset: true, project: `Completion Retry ${retry}` });
+        expect(() => Heyna.completeTest('TC_Completion_Only', 'PASSED', 1, undefined, {
+            project: `Completion Retry ${retry}`, retry
+        })).not.toThrow();
+        const { index } = await persistReporterExecution(history);
+        expect(index.testOutcomes[0]).toMatchObject({ status: 'PASSED', retryCount: retry, attempts: null });
+    }
+});
+
+test('degraded attempt history stays unavailable across later retries', async () => {
+    const root = temporaryRoot();
+    const history = historyConfig({ artifacts: { execution: false, metadata: false } });
+    Heyna.configure({ projectRoot: process.cwd(), artifactRoot: root, history });
+    Heyna.initializeRun({ reset: true, project: 'Sticky Unknown Project' });
+    for (const [retry, status] of [[1, 'FAILED'], [2, 'TIMEDOUT'], [3, 'PASSED']]) {
+        Heyna.initializeTest('TC_Sticky_Unknown', { project: 'Sticky Unknown Project', retry });
+        Heyna.completeTest('TC_Sticky_Unknown', status, 1, status === 'PASSED' ? undefined : 'expected failure', {
+            project: 'Sticky Unknown Project', retry
+        });
+        expect(Heyna.getExecutionData()[0]).not.toHaveProperty('attempts');
+    }
+    const { manager, index } = await persistReporterExecution(history);
+    expect(index.testOutcomes[0]).toMatchObject({ status: 'PASSED', retryCount: 3, attempts: null });
+    const read = await new HistoricalFailureReader({
+        historyManager: manager,
+        clock: () => new Date('2026-08-08T00:00:00Z')
+    }).read();
+    expect(read.runs[0].testOutcomes[0].flakyClassification).toEqual({
+        flakyEligibility: 'unknown', flaky: null, reasonCode: 'ATTEMPT_HISTORY_NOT_PERSISTED'
+    });
+});
+
+test('reporter rejects duplicate, decreasing, and mismatched retry lifecycle data without mutation', () => {
+    const root = temporaryRoot();
+    Heyna.configure({ projectRoot: process.cwd(), artifactRoot: root, history: { enabled: false } });
+    Heyna.initializeRun({ reset: true, project: 'Retry Guard' });
+    Heyna.initializeTest('TC_Retry_Guard', { project: 'Retry Guard', retry: 0 });
+    Heyna.completeTest('TC_Retry_Guard', 'FAILED', 1, 'expected failure', { project: 'Retry Guard', retry: 0 });
+    const before = JSON.stringify(Heyna.getExecutionData());
+    for (const retry of [0, -1, -0, '1', Number.MAX_SAFE_INTEGER + 1]) {
+        expect(() => Heyna.initializeTest('TC_Retry_Guard', { project: 'Retry Guard', retry })).toThrow();
+        expect(JSON.stringify(Heyna.getExecutionData())).toBe(before);
+    }
+    Heyna.initializeTest('TC_Retry_Guard', { project: 'Retry Guard', retry: 1 });
+    const running = JSON.stringify(Heyna.getExecutionData());
+    expect(() => Heyna.completeTest('TC_Retry_Guard', 'PASSED', 1, undefined, { project: 'Retry Guard', retry: 0 })).toThrow();
+    expect(JSON.stringify(Heyna.getExecutionData())).toBe(running);
 });

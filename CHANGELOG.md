@@ -14,6 +14,7 @@ Development work for the v2.4.0 milestone. No stable `v2.4.0` tag exists.
 - Read-only run/day/week/month pass-rate trends with chronological series, explicit comparisons, deterministic classification, moving weighted rates, and propagated data-quality warnings.
 - Read-only run/day/week/month wall-clock duration trends with run-weighted grouped points, exact comparisons, configurable previous-point spike detection, and zero-baseline safeguards.
 - Deterministic test/failure fingerprints, immutable per-run failure indexes, degraded legacy normalization, and read-only recurring-failure trends over retained history.
+- Failure-index `2.0.0` retry-status sequences and HistoricalFailureReader `1.1.0` tri-state flaky classification, including operation without retained raw execution.
 - Isolated project and artifact roots for framework tests and embedded consumers.
 
 ### Changed
@@ -27,7 +28,7 @@ Development work for the v2.4.0 milestone. No stable `v2.4.0` tag exists.
 
 - Existing current-run JSON, PDF, dashboard, and evidence locations remain unchanged.
 - Execution history and retention are disabled by default.
-- History, aggregation, and trend schemas are independently versioned at `1.0.0`.
+- History summary, aggregation, and trend schemas remain independently versioned at `1.0.0`; failure-index v1 remains readable while new sidecars use `2.0.0`, and HistoricalFailureReader output uses `1.1.0`.
 
 ## v2.3.1 — 2026-06-21
 

@@ -82,6 +82,8 @@ The checked-in [Playwright example](../examples/playwright/login.spec.js) demons
 5. Finish with `Heyna.completeTest(...)`, passing `testInfo` when trace detection is required.
 6. Let the configured global teardown generate reports and optional history.
 
+Playwright retry indexes begin at `0`. Call `initializeTest()` once for each attempt in retry order and finalize that same attempt with `completeTest()`. HEYNA rejects duplicate, decreasing, gapped, or mismatched retry indexes so durable attempt history cannot silently claim false completeness. See [Durable Flaky Attempt History](flaky-attempt-history.md).
+
 The repository's Playwright `testDir` is `tests/`. The example under `examples/playwright/` is reference code and is not automatically discovered by `npm test`.
 
 ## Configure HEYNA REPORT
